@@ -4,6 +4,8 @@ expression: terminal.backend()
 ---
 "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━example.txt━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓"
 "┃this is a test file                                                           ┃"
+"┃spanning multiple                                                             ┃"
+"┃lines                                                                         ┃"
 "┃                                                                              ┃"
 "┃                                                                              ┃"
 "┃                                                                              ┃"
@@ -19,6 +21,4 @@ expression: terminal.backend()
 "┃                                                                              ┃"
 "┃                                                                              ┃"
 "┃                                                                              ┃"
-"┃                                                                              ┃"
-"┃                                                                              ┃"
-"┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ Quit <Any Key> ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛"
+"┗━━━━━━━━━━━━━━━━━━━━━━━━━ Scroll Up/Down <Up>/<Down> ━━━━━━━━━━━━━━━━━━━━━━━━━┛"
