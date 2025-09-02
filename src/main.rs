@@ -31,6 +31,7 @@ fn main() -> Result<()> {
     let mut app = App {
         buffer,
         scroll_offset_line: 0,
+        should_exit: false,
     };
 
     color_eyre::install()?;
@@ -43,20 +44,23 @@ fn main() -> Result<()> {
 pub struct App {
     buffer: FileBuffer,
     scroll_offset_line: i16,
+    should_exit: bool,
 }
 
 enum Action {
     ScrollUp,
     ScrollDown,
+    Exit,
     None,
 }
 
 impl App {
     fn run(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
-        loop {
+        while !self.should_exit {
             terminal.draw(|frame| self.draw(frame))?;
             self.handle_event()?;
         }
+        Ok(())
     }
     fn handle_event(&mut self) -> Result<()> {
         match event::read()? {
@@ -71,6 +75,7 @@ impl App {
         let action = match key_event.code {
             KeyCode::Down => Action::ScrollDown,
             KeyCode::Up => Action::ScrollUp,
+            KeyCode::Char('q') => Action::Exit,
             _ => Action::None,
         };
         self.handle_action(action);
@@ -79,6 +84,7 @@ impl App {
         match action {
             Action::ScrollDown => self.move_scroll(1),
             Action::ScrollUp => self.move_scroll(-1),
+            Action::Exit => self.should_exit = true,
             Action::None => {}
         }
     }
@@ -98,6 +104,8 @@ impl Widget for &App {
         let instructions = Line::from(vec![
             " Scroll Up/Down ".into(),
             "<Up>/<Down> ".blue().bold(),
+            " Exit ".into(),
+            "<Q> ".blue().bold(),
         ]);
         let block = Block::bordered()
             .title(title.centered())
@@ -129,6 +137,7 @@ mod tests {
                 ),
             },
             scroll_offset_line: 1,
+            should_exit: false,
         };
         let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
         terminal
@@ -145,6 +154,7 @@ mod tests {
                 content: String::from("this is a test file\nspanning multiple\nlines"),
             },
             scroll_offset_line: 0,
+            should_exit: false,
         };
 
         // Can not scroll up when on first line.
@@ -159,5 +169,20 @@ mod tests {
         assert_eq!(app.scroll_offset_line, 2);
         app.handle_action(Action::ScrollUp);
         assert_eq!(app.scroll_offset_line, 1);
+    }
+
+    #[test]
+    fn test_handle_quit_action() {
+        let mut app = App {
+            buffer: FileBuffer {
+                file_path: PathBuf::from("example.txt"),
+                content: String::from("this is a test file\nspanning multiple\nlines"),
+            },
+            scroll_offset_line: 0,
+            should_exit: false,
+        };
+
+        app.handle_action(Action::Exit);
+        assert_eq!(app.should_exit, true);
     }
 }
