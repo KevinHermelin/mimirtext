@@ -8,7 +8,7 @@
         pkgs = import nixpkgs { inherit system; };
       in {
         devShells.default = pkgs.mkShell {
-          buildInputs = [ pkgs.rustc pkgs.cargo pkgs.rustfmt ];
+          buildInputs = [ pkgs.rustc pkgs.cargo pkgs.rustfmt pkgs.cargo-insta ];
           RUST_SRC_PATH = "${pkgs.rust.packages.stable.rustPlatform.rustLibSrc}";
         };
       });
