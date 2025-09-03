@@ -1,4 +1,5 @@
 mod file_buffer;
+mod markdown_view;
 
 use clap::{Parser, command};
 use color_eyre::Result;
@@ -9,12 +10,12 @@ use ratatui::{
     layout::Rect,
     style::Stylize,
     symbols::border,
-    text::{Line, Text},
-    widgets::{Block, Clear, Paragraph, Widget},
+    text::Line,
+    widgets::{Block, Clear, Widget},
 };
 use std::path::PathBuf;
 
-use crate::file_buffer::FileBuffer;
+use crate::{file_buffer::FileBuffer, markdown_view::MarkdownView};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -30,7 +31,7 @@ fn main() -> Result<()> {
 
     let mut app = App {
         buffer,
-        scroll_offset_line: 0,
+        scroll_lines: 0,
         should_exit: false,
     };
 
@@ -43,7 +44,7 @@ fn main() -> Result<()> {
 
 pub struct App {
     buffer: FileBuffer,
-    scroll_offset_line: i16,
+    scroll_lines: i16,
     should_exit: bool,
 }
 
@@ -95,7 +96,7 @@ impl App {
     fn move_scroll(&mut self, lines: i16) {
         let number_of_lines: i16 = self.buffer.content.lines().count().try_into().unwrap();
 
-        self.scroll_offset_line = (self.scroll_offset_line + lines).clamp(0, number_of_lines - 1);
+        self.scroll_lines = (self.scroll_lines + lines).clamp(0, number_of_lines - 1);
     }
 }
 
@@ -112,15 +113,13 @@ impl Widget for &App {
             .title(title.centered())
             .title_bottom(instructions.centered())
             .border_set(border::THICK);
+        let inner_area = block.inner(area);
 
-        // Tabs render very poorly in paragraph. Better to use spaces.
-        let text = self.buffer.content.clone().replace("\t", "  ");
-        let buffer_text = Text::from(text);
+        block.render(area, buf);
 
-        Paragraph::new(buffer_text)
-            .block(block)
-            .scroll((self.scroll_offset_line.try_into().unwrap(), 0))
-            .render(area, buf);
+        MarkdownView::new(&self.buffer.content)
+            .scroll(self.scroll_lines.try_into().unwrap())
+            .render(inner_area, buf);
     }
 }
 
@@ -139,7 +138,7 @@ mod tests {
                     "this should not be visible.\nthis is a test file\nspanning multiple\nlines\n\tand contains a tab",
                 ),
             },
-            scroll_offset_line: 1,
+            scroll_lines: 1,
             should_exit: false,
         };
         let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
@@ -156,22 +155,22 @@ mod tests {
                 file_path: PathBuf::from("example.txt"),
                 content: String::from("this is a test file\nspanning multiple\nlines"),
             },
-            scroll_offset_line: 0,
+            scroll_lines: 0,
             should_exit: false,
         };
 
         // Can not scroll up when on first line.
         app.handle_action(Action::ScrollUp);
-        assert_eq!(app.scroll_offset_line, 0);
+        assert_eq!(app.scroll_lines, 0);
         app.handle_action(Action::ScrollDown);
-        assert_eq!(app.scroll_offset_line, 1);
+        assert_eq!(app.scroll_lines, 1);
         app.handle_action(Action::ScrollDown);
-        assert_eq!(app.scroll_offset_line, 2);
+        assert_eq!(app.scroll_lines, 2);
         // Scrolling beyond last line should not be possible.
         app.handle_action(Action::ScrollDown);
-        assert_eq!(app.scroll_offset_line, 2);
+        assert_eq!(app.scroll_lines, 2);
         app.handle_action(Action::ScrollUp);
-        assert_eq!(app.scroll_offset_line, 1);
+        assert_eq!(app.scroll_lines, 1);
     }
 
     #[test]
@@ -181,7 +180,7 @@ mod tests {
                 file_path: PathBuf::from("example.txt"),
                 content: String::from("this is a test file\nspanning multiple\nlines"),
             },
-            scroll_offset_line: 0,
+            scroll_lines: 0,
             should_exit: false,
         };
 
