@@ -6,7 +6,7 @@ expression: terminal.backend()
 "┃this is a test file                                                           ┃"
 "┃spanning multiple                                                             ┃"
 "┃lines                                                                         ┃"
-"┃                                                                              ┃"
+"┃  and contains a tab                                                          ┃"
 "┃                                                                              ┃"
 "┃                                                                              ┃"
 "┃                                                                              ┃"

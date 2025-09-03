@@ -10,7 +10,7 @@ use ratatui::{
     style::Stylize,
     symbols::border,
     text::{Line, Text},
-    widgets::{Block, Paragraph, Widget},
+    widgets::{Block, Clear, Paragraph, Widget},
 };
 use std::path::PathBuf;
 
@@ -89,6 +89,7 @@ impl App {
         }
     }
     fn draw(&self, frame: &mut Frame) {
+        frame.render_widget(Clear, frame.area());
         frame.render_widget(self, frame.area());
     }
     fn move_scroll(&mut self, lines: i16) {
@@ -112,7 +113,9 @@ impl Widget for &App {
             .title_bottom(instructions.centered())
             .border_set(border::THICK);
 
-        let buffer_text = Text::from(self.buffer.content.clone());
+        // Tabs render very poorly in paragraph. Better to use spaces.
+        let text = self.buffer.content.clone().replace("\t", "  ");
+        let buffer_text = Text::from(text);
 
         Paragraph::new(buffer_text)
             .block(block)
@@ -133,7 +136,7 @@ mod tests {
             buffer: FileBuffer {
                 file_path: PathBuf::from("example.txt"),
                 content: String::from(
-                    "this should not be visible.\nthis is a test file\nspanning multiple\nlines",
+                    "this should not be visible.\nthis is a test file\nspanning multiple\nlines\n\tand contains a tab",
                 ),
             },
             scroll_offset_line: 1,
