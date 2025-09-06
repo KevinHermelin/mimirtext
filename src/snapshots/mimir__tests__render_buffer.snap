@@ -3,12 +3,12 @@ source: src/main.rs
 expression: terminal.backend()
 ---
 "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━example.txt━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓"
+"┃                                                                              ┃"
 "┃this is a test file                                                           ┃"
-"┃spanning multiple                                                             ┃"
-"┃lines                                                                         ┃"
-"┃  and contains a tab                                                          ┃"
 "┃                                                                              ┃"
+"┃with multiple                                                                 ┃"
 "┃                                                                              ┃"
+"┃paragraphs                                                                    ┃"
 "┃                                                                              ┃"
 "┃                                                                              ┃"
 "┃                                                                              ┃"

@@ -135,7 +135,7 @@ mod tests {
             buffer: FileBuffer {
                 file_path: PathBuf::from("example.txt"),
                 content: String::from(
-                    "this should not be visible.\nthis is a test file\nspanning multiple\nlines\n\tand contains a tab",
+                    "this should not be visible.\n\nthis is a test file\n\nwith multiple\n\nparagraphs",
                 ),
             },
             scroll_lines: 1,
