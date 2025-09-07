@@ -15,7 +15,10 @@ use ratatui::{
 };
 use std::path::PathBuf;
 
-use crate::{file_buffer::FileBuffer, markdown_view::MarkdownView};
+use crate::{
+    file_buffer::FileBuffer,
+    markdown_view::{MarkdownDocument, MarkdownView},
+};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -29,11 +32,7 @@ fn main() -> Result<()> {
     let file_path = cli.file_path;
     let buffer = FileBuffer::from_file(&file_path).expect("should be able to read file");
 
-    let mut app = App {
-        buffer,
-        scroll_lines: 0,
-        should_exit: false,
-    };
+    let mut app = App::new(buffer);
 
     color_eyre::install()?;
     let mut terminal = ratatui::init();
@@ -45,6 +44,7 @@ fn main() -> Result<()> {
 pub struct App {
     buffer: FileBuffer,
     scroll_lines: i16,
+    link_selection_index: isize,
     should_exit: bool,
 }
 
@@ -53,9 +53,22 @@ enum Action {
     ScrollDown,
     Exit,
     None,
+    NextLink,
+    PreviousLink,
 }
 
 impl App {
+    fn new(buffer: FileBuffer) -> Self {
+        return App {
+            buffer,
+            scroll_lines: 0,
+            link_selection_index: 0,
+            should_exit: false,
+        };
+    }
+    fn get_document(&self) -> MarkdownDocument {
+        MarkdownDocument::new(&self.buffer.content)
+    }
     fn run(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
         while !self.should_exit {
             terminal.draw(|frame| self.draw(frame))?;
@@ -76,6 +89,8 @@ impl App {
         let action = match key_event.code {
             KeyCode::Down => Action::ScrollDown,
             KeyCode::Up => Action::ScrollUp,
+            KeyCode::Right => Action::NextLink,
+            KeyCode::Left => Action::PreviousLink,
             KeyCode::Char('q') => Action::Exit,
             _ => Action::None,
         };
@@ -86,6 +101,8 @@ impl App {
             Action::ScrollDown => self.move_scroll(1),
             Action::ScrollUp => self.move_scroll(-1),
             Action::Exit => self.should_exit = true,
+            Action::NextLink => self.move_link_selection(1),
+            Action::PreviousLink => self.move_link_selection(-1),
             Action::None => {}
         }
     }
@@ -97,6 +114,16 @@ impl App {
         let number_of_lines: i16 = self.buffer.content.lines().count().try_into().unwrap();
 
         self.scroll_lines = (self.scroll_lines + lines).clamp(0, number_of_lines - 1);
+    }
+    fn move_link_selection(&mut self, offset: isize) {
+        let link_count = self.get_document().get_links().len().try_into().unwrap();
+
+        if link_count == 0 {
+            self.link_selection_index = 0;
+            return;
+        }
+
+        self.link_selection_index = (self.link_selection_index + offset).rem_euclid(link_count);
     }
 }
 
@@ -117,7 +144,13 @@ impl Widget for &App {
 
         block.render(area, buf);
 
-        MarkdownView::new(&self.buffer.content)
+        let mut document = self.get_document();
+        document.selected_link = document
+            .get_links()
+            .get::<usize>(self.link_selection_index.try_into().unwrap())
+            .cloned();
+
+        MarkdownView::new(document)
             .scroll(self.scroll_lines.try_into().unwrap())
             .render(inner_area, buf);
     }
@@ -138,6 +171,7 @@ mod tests {
                     "this should not be visible.\n\nthis is a test file\n\nwith multiple\n\nparagraphs",
                 ),
             },
+            link_selection_index: 0,
             scroll_lines: 1,
             should_exit: false,
         };
@@ -155,6 +189,7 @@ mod tests {
                 file_path: PathBuf::from("example.txt"),
                 content: String::from("this is a test file\nspanning multiple\nlines"),
             },
+            link_selection_index: 0,
             scroll_lines: 0,
             should_exit: false,
         };
@@ -180,11 +215,47 @@ mod tests {
                 file_path: PathBuf::from("example.txt"),
                 content: String::from("this is a test file\nspanning multiple\nlines"),
             },
+            link_selection_index: 0,
             scroll_lines: 0,
             should_exit: false,
         };
 
         app.handle_action(Action::Exit);
         assert_eq!(app.should_exit, true);
+    }
+
+    #[test]
+    fn test_handle_link_selection() {
+        let mut app = App::new(FileBuffer {
+            file_path: PathBuf::from("example.txt"),
+            content: String::from("[[This]] file [[Have|has]] multiple [links](url.com)"),
+        });
+
+        assert_eq!(app.link_selection_index, 0);
+
+        app.handle_action(Action::NextLink);
+        assert_eq!(app.link_selection_index, 1);
+
+        app.handle_action(Action::NextLink);
+        assert_eq!(app.link_selection_index, 2);
+
+        app.handle_action(Action::NextLink);
+        assert_eq!(app.link_selection_index, 0);
+
+        app.handle_action(Action::PreviousLink);
+        assert_eq!(app.link_selection_index, 2);
+
+        app.handle_action(Action::PreviousLink);
+        assert_eq!(app.link_selection_index, 1);
+
+        let mut app = App::new(FileBuffer {
+            file_path: PathBuf::from("example.txt"),
+            content: String::from("This file has no link"),
+        });
+
+        assert_eq!(app.link_selection_index, 0);
+
+        app.handle_action(Action::NextLink);
+        assert_eq!(app.link_selection_index, 0);
     }
 }

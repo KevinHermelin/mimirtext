@@ -1,4 +1,4 @@
-use pulldown_cmark::{Event, Parser, Tag, TagEnd};
+use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -7,15 +7,137 @@ use ratatui::{
     widgets::{Paragraph, Widget, Wrap},
 };
 
-pub struct MarkdownView {
+#[derive(Debug, PartialEq, Clone)]
+pub struct LinkRef(usize);
+
+pub struct MarkdownDocument {
     content: String,
+    pub selected_link: Option<LinkRef>,
+}
+
+fn flush_line<'a>(lines: &mut Vec<Line<'a>>, line: &mut Vec<Span<'a>>) {
+    lines.push(Line::from_iter(line.clone()));
+    line.clear();
+}
+
+impl MarkdownDocument {
+    pub fn new(content: &str) -> Self {
+        MarkdownDocument {
+            content: content.to_owned(),
+            selected_link: None,
+        }
+    }
+    fn get_parser(&self) -> Parser {
+        let options = Options::ENABLE_WIKILINKS;
+        Parser::new_ext(&self.content, options)
+    }
+    fn get_lines(&self) -> Vec<Line> {
+        let mut lines = vec![];
+        let mut line = vec![];
+
+        let mut link_index = 0;
+
+        let mut inside_heading = false;
+        let mut inside_link = false;
+        let mut list_level = 0;
+
+        let mut last_tag: Option<TagEnd> = None;
+
+        for event in self.get_parser() {
+            match event {
+                Event::Text(text) => {
+                    let mut style = Style::new();
+                    if inside_heading {
+                        style = style.bold().light_blue().underlined();
+                    }
+                    if inside_link {
+                        style = style.cyan();
+                        if Some(LinkRef(link_index)) == self.selected_link {
+                            style = style.reversed();
+                        }
+                    }
+                    line.push(Span::styled(text, style));
+                }
+                Event::Start(tag) => match tag {
+                    Tag::Heading { .. } => {
+                        if let Some(_) = last_tag {
+                            flush_line(&mut lines, &mut line);
+                        }
+                        inside_heading = true;
+                    }
+                    Tag::Paragraph => {
+                        // Paragraphs should have spacing between.
+                        if let Some(TagEnd::Paragraph) = last_tag {
+                            flush_line(&mut lines, &mut line);
+                        }
+                    }
+                    Tag::List(_) => {
+                        // If this list is indented, this new list will be embedded into an item tag.
+                        // We need to flush the old item tag if this is the case.
+                        if !line.is_empty() {
+                            flush_line(&mut lines, &mut line);
+                        }
+                        list_level += 1;
+                    }
+                    Tag::Item => {
+                        let text_element = Span::raw("  ".repeat(list_level - 1) + "- ");
+                        line.push(text_element);
+                    }
+                    Tag::Link { .. } => {
+                        inside_link = true;
+                    }
+                    _ => {}
+                },
+                Event::End(tag) => {
+                    match tag {
+                        TagEnd::Heading(_) => {
+                            flush_line(&mut lines, &mut line);
+                            flush_line(&mut lines, &mut line);
+                            inside_heading = false;
+                        }
+                        TagEnd::Paragraph => {
+                            flush_line(&mut lines, &mut line);
+                        }
+                        TagEnd::List(_) => list_level -= 1,
+                        TagEnd::Item => {
+                            // It is possible that this particular item has already been flushed. See
+                            // how List tags are entered.
+                            if !line.is_empty() {
+                                flush_line(&mut lines, &mut line);
+                            }
+                        }
+                        TagEnd::Link => {
+                            link_index += 1;
+                            inside_link = false;
+                        }
+                        _ => {}
+                    }
+                    last_tag = Some(tag);
+                }
+                _ => {}
+            }
+        }
+        flush_line(&mut lines, &mut line);
+        lines
+    }
+    pub fn get_links(&self) -> Vec<LinkRef> {
+        self.get_parser()
+            .filter(|event| matches!(event, Event::End(TagEnd::Link)))
+            .enumerate()
+            .map(|(i, _)| LinkRef(i))
+            .collect()
+    }
+}
+
+pub struct MarkdownView {
+    document: MarkdownDocument,
     scroll_lines: i16,
 }
 
 impl MarkdownView {
-    pub fn new(content: &str) -> Self {
+    pub fn new(document: MarkdownDocument) -> Self {
         MarkdownView {
-            content: content.to_owned(),
+            document,
             scroll_lines: 0,
         }
     }
@@ -25,94 +147,9 @@ impl MarkdownView {
     }
 }
 
-fn flush_line<'a>(paragraph: &mut Vec<Line<'a>>, line: &mut Vec<Span<'a>>) {
-    paragraph.push(Line::from_iter(line.clone()));
-    line.clear();
-}
-
 impl Widget for &MarkdownView {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let mut paragraph = vec![];
-        let mut line = vec![];
-
-        let mut heading = false;
-        let mut list_level = 0;
-
-        let mut last_tag: Option<TagEnd> = None;
-
-        // TODO: This implementation lacks several features and could be improved in a
-        // multitude of ways.
-
-        let parser = Parser::new(&self.content);
-        for event in parser {
-            match event {
-                Event::Text(text) => {
-                    let mut style = Style::new();
-                    if heading {
-                        style = style.bold().light_blue();
-                    }
-                    line.push(Span::styled(text, style));
-                }
-                Event::Start(tag) => match tag {
-                    Tag::Heading {
-                        level: _,
-                        id: _,
-                        classes: _,
-                        attrs: _,
-                    } => {
-                        if let Some(_) = last_tag {
-                            flush_line(&mut paragraph, &mut line);
-                        }
-                        heading = true;
-                    }
-                    Tag::Paragraph => {
-                        // Paragraphs should have spacing between.
-                        if let Some(TagEnd::Paragraph) = last_tag {
-                            flush_line(&mut paragraph, &mut line);
-                        }
-                    }
-                    Tag::List(_) => {
-                        // If this list is indented, this new list will be embedded into an item tag.
-                        // We need to flush the old item tag if this is the case.
-                        if !line.is_empty() {
-                            flush_line(&mut paragraph, &mut line);
-                        }
-                        list_level += 1;
-                    }
-                    Tag::Item => {
-                        let text_element = Span::raw("  ".repeat(list_level - 1) + "- ");
-                        line.push(text_element);
-                    }
-                    _ => {}
-                },
-                Event::End(tag) => {
-                    match tag {
-                        TagEnd::Heading(_) => {
-                            flush_line(&mut paragraph, &mut line);
-                            flush_line(&mut paragraph, &mut line);
-                            heading = false;
-                        }
-                        TagEnd::Paragraph => {
-                            flush_line(&mut paragraph, &mut line);
-                        }
-                        TagEnd::List(_) => list_level -= 1,
-                        TagEnd::Item => {
-                            // It is possible that this particular item has already been flushed. See
-                            // how List tags are entered.
-                            if !line.is_empty() {
-                                flush_line(&mut paragraph, &mut line);
-                            }
-                        }
-                        _ => {}
-                    }
-                    last_tag = Some(tag);
-                }
-                _ => {}
-            }
-        }
-        flush_line(&mut paragraph, &mut line);
-
-        Paragraph::new(paragraph)
+        Paragraph::new(self.document.get_lines())
             .wrap(Wrap { trim: false })
             .scroll((self.scroll_lines.try_into().unwrap(), 0))
             .render(area, buf);
@@ -121,6 +158,8 @@ impl Widget for &MarkdownView {
 
 #[cfg(test)]
 mod tests {
+    use std::vec;
+
     use super::*;
     use insta::assert_snapshot;
     use ratatui::{Terminal, backend::TestBackend};
@@ -128,7 +167,7 @@ mod tests {
     #[test]
     fn test_render_view() {
         let view = MarkdownView::new(
-            "
+            MarkdownDocument::new("
 # This is a heading
 This **is** a *paragraph* of text.
 - This is a list
@@ -150,13 +189,31 @@ This is another paragraph of text. It is long enough to be wrapped, yet every wo
 - This should be on level 0.
 - This should be the last item.
 
+[[This paragraph]] has a few [[Link|links]], which can be [selected](https://en.wikipedia.org/wiki/Selection_(user_interface)).
+
 This should not be visible.
-        ",
-        );
-        let mut terminal = Terminal::new(TestBackend::new(80, 21)).unwrap();
+        "
+        ));
+        let mut terminal = Terminal::new(TestBackend::new(80, 22)).unwrap();
         terminal
             .draw(|frame| frame.render_widget(&view, frame.area()))
             .unwrap();
         assert_snapshot!(terminal.backend());
+    }
+
+    #[test]
+    fn test_get_links() {
+        assert_eq!(
+            MarkdownDocument::new(
+                "[[This page]] has [[Link|links]], of [different](url.com) kinds."
+            )
+            .get_links(),
+            vec![LinkRef(0), LinkRef(1), LinkRef(2),]
+        );
+
+        assert_eq!(
+            MarkdownDocument::new("This page has no links.").get_links(),
+            vec![]
+        );
     }
 }

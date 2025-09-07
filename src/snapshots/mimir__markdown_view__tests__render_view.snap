@@ -23,3 +23,4 @@ expression: terminal.backend()
 "  - This should be on level 1.                                                  "
 "- This should be on level 0.                                                    "
 "- This should be the last item.                                                 "
+"This paragraph has a few links, which can be selected.                          "
