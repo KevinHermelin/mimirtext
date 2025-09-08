@@ -239,15 +239,10 @@ fn center(area: Rect, horizontal: Constraint, vertical: Constraint) -> Rect {
 impl Widget for &App {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let title = Line::from(self.buffer.file_path.display().to_string().bold());
-        let instructions = Line::from(vec![
-            " Scroll Up/Down ".into(),
-            "<Up>/<Down> ".blue().bold(),
-            " Exit ".into(),
-            "<Q> ".blue().bold(),
-        ]);
+        let instructions = Line::from(vec![" Exit ".into(), "<Q> ".blue().bold()]);
         let block = Block::bordered()
             .title(title.centered())
-            .title_bottom(instructions.centered())
+            .title_bottom(instructions.right_aligned())
             .border_set(border::THICK);
         let inner_area = block.inner(area);
 
