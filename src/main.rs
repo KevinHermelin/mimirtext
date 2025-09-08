@@ -55,6 +55,7 @@ enum Action {
     None,
     NextLink,
     PreviousLink,
+    FollowLink,
 }
 
 impl App {
@@ -67,7 +68,12 @@ impl App {
         };
     }
     fn get_document(&self) -> MarkdownDocument {
-        MarkdownDocument::new(&self.buffer.content)
+        let mut document = MarkdownDocument::new(&self.buffer.content);
+        document.selected_link = document
+            .get_links()
+            .get::<usize>(self.link_selection_index.try_into().unwrap())
+            .cloned();
+        document
     }
     fn run(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
         while !self.should_exit {
@@ -91,6 +97,7 @@ impl App {
             KeyCode::Up => Action::ScrollUp,
             KeyCode::Right => Action::NextLink,
             KeyCode::Left => Action::PreviousLink,
+            KeyCode::Enter => Action::FollowLink,
             KeyCode::Char('q') => Action::Exit,
             _ => Action::None,
         };
@@ -103,6 +110,7 @@ impl App {
             Action::Exit => self.should_exit = true,
             Action::NextLink => self.move_link_selection(1),
             Action::PreviousLink => self.move_link_selection(-1),
+            Action::FollowLink => self.follow_link(),
             Action::None => {}
         }
     }
@@ -125,6 +133,25 @@ impl App {
 
         self.link_selection_index = (self.link_selection_index + offset).rem_euclid(link_count);
     }
+    fn follow_link(&mut self) {
+        match self.get_document().selected_link {
+            None => return,
+            Some(link_ref) => {
+                let repository_root = self
+                    .buffer
+                    .file_path
+                    .parent()
+                    .expect("opened file should have a parent");
+
+                // TODO: Target might be an URL.
+                let target = repository_root.join(format!("{}.md", link_ref.target));
+                // TODO: Target file might not exist.
+                self.buffer = FileBuffer::from_file(&target).expect("link target should exist");
+                self.link_selection_index = 0;
+                self.scroll_lines = 0;
+            }
+        }
+    }
 }
 
 impl Widget for &App {
@@ -144,11 +171,7 @@ impl Widget for &App {
 
         block.render(area, buf);
 
-        let mut document = self.get_document();
-        document.selected_link = document
-            .get_links()
-            .get::<usize>(self.link_selection_index.try_into().unwrap())
-            .cloned();
+        let document = self.get_document();
 
         MarkdownView::new(document)
             .scroll(self.scroll_lines.try_into().unwrap())
@@ -158,9 +181,12 @@ impl Widget for &App {
 
 #[cfg(test)]
 mod tests {
+    use std::{fs::File, io::Write};
+
     use super::*;
     use insta::assert_snapshot;
     use ratatui::{Terminal, backend::TestBackend};
+    use tempfile::TempDir;
 
     #[test]
     fn test_render_buffer() {
@@ -256,6 +282,45 @@ mod tests {
         assert_eq!(app.link_selection_index, 0);
 
         app.handle_action(Action::NextLink);
+        assert_eq!(app.link_selection_index, 0);
+    }
+
+    #[test]
+    fn test_handle_link_follow() {
+        let temp_dir = TempDir::new().expect("should be able to create temporary directory");
+
+        let file_a_path = temp_dir.path().join("file_a.md");
+        let file_b_path = temp_dir.path().join("file_b.md");
+
+        let mut file_a =
+            File::create(&file_a_path).expect("should be able to create temporary file");
+        let mut file_b =
+            File::create(&file_b_path).expect("should be able to create temporary file");
+
+        write!(
+            file_a,
+            "
+# Link test
+[[file_a|This]] contains two [[file_b|links]].
+"
+        )
+        .expect("should be able to write to temporary file");
+        write!(file_b, "This is the other file")
+            .expect("should be able to write to temporary file");
+
+        let mut app = App::new(
+            FileBuffer::from_file(&file_a_path).expect("should be able to read temporary file"),
+        );
+        app.link_selection_index = 1;
+        app.scroll_lines = 1;
+
+        app.handle_action(Action::FollowLink);
+
+        assert_eq!(app.buffer.file_path, file_b_path);
+        assert_eq!(app.buffer.content, "This is the other file");
+
+        // Link selection and scroll should be reset.
+        assert_eq!(app.scroll_lines, 0);
         assert_eq!(app.link_selection_index, 0);
     }
 }

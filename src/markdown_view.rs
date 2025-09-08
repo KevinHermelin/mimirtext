@@ -8,7 +8,10 @@ use ratatui::{
 };
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct LinkRef(usize);
+pub struct LinkRef {
+    index: usize,
+    pub target: String,
+}
 
 pub struct MarkdownDocument {
     content: String,
@@ -52,7 +55,11 @@ impl MarkdownDocument {
                     }
                     if inside_link {
                         style = style.cyan();
-                        if Some(LinkRef(link_index)) == self.selected_link {
+                        if self
+                            .selected_link
+                            .as_ref()
+                            .is_some_and(|LinkRef { index, .. }| *index == link_index)
+                        {
                             style = style.reversed();
                         }
                     }
@@ -122,9 +129,12 @@ impl MarkdownDocument {
     }
     pub fn get_links(&self) -> Vec<LinkRef> {
         self.get_parser()
-            .filter(|event| matches!(event, Event::End(TagEnd::Link)))
+            .filter_map(|event| match event {
+                Event::Start(Tag::Link { dest_url, .. }) => Some(dest_url.to_string()),
+                _ => None,
+            })
             .enumerate()
-            .map(|(i, _)| LinkRef(i))
+            .map(|(index, target)| LinkRef { index, target })
             .collect()
     }
 }
@@ -208,7 +218,20 @@ This should not be visible.
                 "[[This page]] has [[Link|links]], of [different](url.com) kinds."
             )
             .get_links(),
-            vec![LinkRef(0), LinkRef(1), LinkRef(2),]
+            vec![
+                LinkRef {
+                    index: 0,
+                    target: String::from("This page")
+                },
+                LinkRef {
+                    index: 1,
+                    target: String::from("Link")
+                },
+                LinkRef {
+                    index: 2,
+                    target: String::from("url.com")
+                },
+            ]
         );
 
         assert_eq!(
