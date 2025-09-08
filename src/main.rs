@@ -11,7 +11,7 @@ use ratatui::{
         ExecutableCommand,
         terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
     },
-    layout::{Constraint, Flex, Layout, Rect},
+    layout::{Alignment, Constraint, Flex, Layout, Rect},
     style::Stylize,
     symbols::border,
     text::Line,
@@ -259,29 +259,42 @@ impl Widget for &App {
             .scroll(self.scroll_lines.try_into().unwrap())
             .render(inner_area, buf);
 
-        match &self.error_message {
-            None => {}
-            Some(error) => {
-                let text = error.to_owned().reset();
-                let helper_text = "Press any key to dismiss".dim();
-                let min_width = max(text.width(), helper_text.width()) as u16;
+        if !self.buffer.created {
+            let text = "This file has not been created yet".bold();
+            let helper_text = "Press <C> to open in editor".dim();
+            let min_width = max(text.width(), helper_text.width()) as u16;
 
-                let area = center(
-                    area,
-                    Constraint::Length(min_width + 6),
-                    Constraint::Length(5),
-                );
-                Clear.render(area, buf);
-                let block = Block::bordered().title("Error").border_set(border::ROUNDED);
+            let area = center(area, Constraint::Length(min_width), Constraint::Length(5));
 
-                Paragraph::new(vec![
-                    Line::from(text),
-                    Line::from(""),
-                    Line::from(helper_text),
-                ])
-                .block(block)
-                .render(area, buf);
-            }
+            Paragraph::new(vec![
+                Line::from(text),
+                Line::from(""),
+                Line::from(helper_text),
+            ])
+            .alignment(Alignment::Center)
+            .render(area, buf);
+        }
+
+        if let Some(error) = self.error_message.to_owned() {
+            let text = error.reset();
+            let helper_text = "Press any key to dismiss".dim();
+            let min_width = max(text.width(), helper_text.width()) as u16;
+
+            let area = center(
+                area,
+                Constraint::Length(min_width + 6),
+                Constraint::Length(5),
+            );
+            Clear.render(area, buf);
+            let block = Block::bordered().title("Error").border_set(border::ROUNDED);
+
+            Paragraph::new(vec![
+                Line::from(text),
+                Line::from(""),
+                Line::from(helper_text),
+            ])
+            .block(block)
+            .render(area, buf);
         }
     }
 }
@@ -297,12 +310,9 @@ mod tests {
 
     #[test]
     fn test_render_buffer() {
-        let mut app = App::new(FileBuffer {
-            file_path: PathBuf::from("example.txt"),
-            content: String::from(
-                "this should not be visible.\n\nthis is a test file\n\nwith multiple\n\nparagraphs",
-            ),
-        });
+        let mut app = App::new(FileBuffer::mock(
+            "this should not be visible.\n\nthis is a test file\n\nwith multiple\n\nparagraphs",
+        ));
         app.scroll_lines = 1;
 
         let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
@@ -314,10 +324,7 @@ mod tests {
 
     #[test]
     fn test_render_error() {
-        let mut app = App::new(FileBuffer {
-            file_path: PathBuf::from("example.txt"),
-            content: String::from("This is a file."),
-        });
+        let mut app = App::new(FileBuffer::mock("This is a file."));
 
         app.error_message = Some(String::from("This is an error"));
 
@@ -332,11 +339,24 @@ mod tests {
     }
 
     #[test]
+    fn test_render_new_file() {
+        let app = App::new(
+            FileBuffer::from_file(&PathBuf::from("nonexistent.md"))
+                .expect("should be able to create FileBuffer for non-existent file"),
+        );
+
+        let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
+        terminal
+            .draw(|frame| frame.render_widget(&app, frame.area()))
+            .unwrap();
+        assert_snapshot!(terminal.backend());
+    }
+
+    #[test]
     fn test_handle_scroll_action() {
-        let mut app = App::new(FileBuffer {
-            file_path: PathBuf::from("example.txt"),
-            content: String::from("this is a test file\nspanning multiple\nlines"),
-        });
+        let mut app = App::new(FileBuffer::mock(
+            "this is a test file\nspanning multiple\nlines",
+        ));
 
         // Can not scroll up when on first line.
         app.handle_action(Action::ScrollUp);
@@ -354,10 +374,9 @@ mod tests {
 
     #[test]
     fn test_handle_quit_action() {
-        let mut app = App::new(FileBuffer {
-            file_path: PathBuf::from("example.txt"),
-            content: String::from("this is a test file\nspanning multiple\nlines"),
-        });
+        let mut app = App::new(FileBuffer::mock(
+            "this is a test file\nspanning multiple\nlines",
+        ));
 
         app.handle_action(Action::Exit);
         assert_eq!(app.should_exit, true);
@@ -365,10 +384,9 @@ mod tests {
 
     #[test]
     fn test_handle_link_selection() {
-        let mut app = App::new(FileBuffer {
-            file_path: PathBuf::from("example.txt"),
-            content: String::from("[[This]] file [[Have|has]] multiple [links](url.com)"),
-        });
+        let mut app = App::new(FileBuffer::mock(
+            "[[This]] file [[Have|has]] multiple [links](url.com)",
+        ));
 
         assert_eq!(app.link_selection_index, 0);
 
@@ -387,10 +405,7 @@ mod tests {
         app.handle_action(Action::PreviousLink);
         assert_eq!(app.link_selection_index, 1);
 
-        let mut app = App::new(FileBuffer {
-            file_path: PathBuf::from("example.txt"),
-            content: String::from("This file has no link"),
-        });
+        let mut app = App::new(FileBuffer::mock("This file has no link"));
 
         assert_eq!(app.link_selection_index, 0);
 
@@ -438,45 +453,8 @@ mod tests {
     }
 
     #[test]
-    fn test_handle_link_follow_error() {
-        let temp_dir = TempDir::new().expect("should be able to create temporary directory");
-
-        let file_a_path = temp_dir.path().join("file_a.md");
-
-        let mut file_a =
-            File::create(&file_a_path).expect("should be able to create temporary file");
-
-        write!(
-            file_a,
-            "
-# Link error test
-[[file_a|This]] contains two [[file_b|links]], of which the latter does not exist.
-"
-        )
-        .expect("should be able to write to temporary file");
-
-        let mut app = App::new(
-            FileBuffer::from_file(&file_a_path).expect("should be able to read temporary file"),
-        );
-        app.link_selection_index = 1;
-        app.scroll_lines = 1;
-
-        app.handle_action(Action::FollowLink);
-
-        assert_eq!(
-            app.error_message,
-            Some(String::from(
-                "Could not open \"file_b.md\" in current repository."
-            ))
-        );
-    }
-
-    #[test]
     fn test_handle_edit_file() {
-        let mut app = App::new(FileBuffer {
-            file_path: PathBuf::from("example.md"),
-            content: String::from("This is a file"),
-        });
+        let mut app = App::new(FileBuffer::mock("This is a file"));
         app.handle_action(Action::EditFile);
         assert_eq!(app.should_edit, true)
     }
