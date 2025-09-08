@@ -41,6 +41,8 @@ impl MarkdownDocument {
         let mut link_index = 0;
 
         let mut inside_heading = false;
+        let mut inside_strong = false;
+        let mut inside_emphasis = false;
         let mut inside_link = false;
         let mut inside_metadata = false;
         let mut list_level = 0;
@@ -53,6 +55,12 @@ impl MarkdownDocument {
                     let mut style = Style::new();
                     if inside_metadata {
                         continue;
+                    }
+                    if inside_emphasis {
+                        style = style.italic();
+                    }
+                    if inside_strong {
+                        style = style.bold();
                     }
                     if inside_heading {
                         style = style.bold().light_blue().underlined();
@@ -81,6 +89,12 @@ impl MarkdownDocument {
                         if let Some(TagEnd::Paragraph) = last_tag {
                             flush_line(&mut lines, &mut line);
                         }
+                    }
+                    Tag::Strong => {
+                        inside_strong = true;
+                    }
+                    Tag::Emphasis => {
+                        inside_emphasis = true;
                     }
                     Tag::MetadataBlock(_) => {
                         inside_metadata = true;
@@ -114,6 +128,12 @@ impl MarkdownDocument {
                         }
                         TagEnd::MetadataBlock(_) => {
                             inside_metadata = false;
+                        }
+                        TagEnd::Strong => {
+                            inside_strong = false;
+                        }
+                        TagEnd::Emphasis => {
+                            inside_emphasis = false;
                         }
                         TagEnd::List(_) => list_level -= 1,
                         TagEnd::Item => {
