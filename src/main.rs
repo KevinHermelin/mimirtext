@@ -7,6 +7,10 @@ use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
     DefaultTerminal, Frame,
     buffer::Buffer,
+    crossterm::{
+        ExecutableCommand,
+        terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
+    },
     layout::{Constraint, Flex, Layout, Rect},
     style::Stylize,
     symbols::border,
@@ -15,6 +19,7 @@ use ratatui::{
 };
 use std::{
     cmp::max,
+    io::stdout,
     path::{Path, PathBuf},
 };
 
@@ -49,6 +54,7 @@ pub struct App {
     scroll_lines: i16,
     link_selection_index: isize,
     should_exit: bool,
+    should_edit: bool,
     error_message: Option<String>,
     navigation_history: Vec<PathBuf>,
 }
@@ -63,6 +69,7 @@ enum Action {
     FollowLink,
     NavigateBack,
     DismissError,
+    EditFile,
 }
 
 impl App {
@@ -72,6 +79,7 @@ impl App {
             scroll_lines: 0,
             link_selection_index: 0,
             should_exit: false,
+            should_edit: false,
             error_message: None,
             navigation_history: vec![],
         };
@@ -88,7 +96,23 @@ impl App {
         while !self.should_exit {
             terminal.draw(|frame| self.draw(frame))?;
             self.handle_event()?;
+
+            if self.should_edit {
+                self.edit_file(terminal)
+                    .expect("should be able to edit file");
+                self.should_edit = false;
+            }
         }
+        Ok(())
+    }
+    fn edit_file(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
+        stdout().execute(LeaveAlternateScreen)?;
+        disable_raw_mode()?;
+        edit::edit_file(&self.buffer.file_path)?;
+        self.open_path(&self.buffer.file_path.to_owned());
+        stdout().execute(EnterAlternateScreen)?;
+        enable_raw_mode()?;
+        terminal.clear()?;
         Ok(())
     }
     fn handle_event(&mut self) -> Result<()> {
@@ -114,6 +138,7 @@ impl App {
             KeyCode::Enter => Action::FollowLink,
             KeyCode::Backspace => Action::NavigateBack,
             KeyCode::Char('q') => Action::Exit,
+            KeyCode::Char('c') => Action::EditFile,
             _ => Action::None,
         };
         self.handle_action(action);
@@ -128,6 +153,7 @@ impl App {
             Action::FollowLink => self.follow_link(),
             Action::DismissError => self.error_message = None,
             Action::NavigateBack => self.navigate_back(),
+            Action::EditFile => self.should_edit = true,
             Action::None => {}
         }
     }
@@ -443,6 +469,16 @@ mod tests {
                 "Could not open \"file_b.md\" in current repository."
             ))
         );
+    }
+
+    #[test]
+    fn test_handle_edit_file() {
+        let mut app = App::new(FileBuffer {
+            file_path: PathBuf::from("example.md"),
+            content: String::from("This is a file"),
+        });
+        app.handle_action(Action::EditFile);
+        assert_eq!(app.should_edit, true)
     }
 
     #[test]
