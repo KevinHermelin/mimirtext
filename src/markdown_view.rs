@@ -31,7 +31,7 @@ impl MarkdownDocument {
         }
     }
     fn get_parser(&self) -> Parser {
-        let options = Options::ENABLE_WIKILINKS;
+        let options = Options::ENABLE_WIKILINKS.union(Options::ENABLE_YAML_STYLE_METADATA_BLOCKS);
         Parser::new_ext(&self.content, options)
     }
     fn get_lines(&self) -> Vec<Line> {
@@ -42,6 +42,7 @@ impl MarkdownDocument {
 
         let mut inside_heading = false;
         let mut inside_link = false;
+        let mut inside_metadata = false;
         let mut list_level = 0;
 
         let mut last_tag: Option<TagEnd> = None;
@@ -50,6 +51,9 @@ impl MarkdownDocument {
             match event {
                 Event::Text(text) => {
                     let mut style = Style::new();
+                    if inside_metadata {
+                        continue;
+                    }
                     if inside_heading {
                         style = style.bold().light_blue().underlined();
                     }
@@ -67,7 +71,7 @@ impl MarkdownDocument {
                 }
                 Event::Start(tag) => match tag {
                     Tag::Heading { .. } => {
-                        if let Some(_) = last_tag {
+                        if lines.len() != 0 || line.len() != 0 {
                             flush_line(&mut lines, &mut line);
                         }
                         inside_heading = true;
@@ -77,6 +81,9 @@ impl MarkdownDocument {
                         if let Some(TagEnd::Paragraph) = last_tag {
                             flush_line(&mut lines, &mut line);
                         }
+                    }
+                    Tag::MetadataBlock(_) => {
+                        inside_metadata = true;
                     }
                     Tag::List(_) => {
                         // If this list is indented, this new list will be embedded into an item tag.
@@ -104,6 +111,9 @@ impl MarkdownDocument {
                         }
                         TagEnd::Paragraph => {
                             flush_line(&mut lines, &mut line);
+                        }
+                        TagEnd::MetadataBlock(_) => {
+                            inside_metadata = false;
                         }
                         TagEnd::List(_) => list_level -= 1,
                         TagEnd::Item => {
@@ -178,6 +188,9 @@ mod tests {
     fn test_render_view() {
         let view = MarkdownView::new(
             MarkdownDocument::new("
+---
+info: \"This metadata block should not be visible.\"
+---
 # This is a heading
 This **is** a *paragraph* of text.
 - This is a list
