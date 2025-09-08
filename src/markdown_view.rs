@@ -108,7 +108,7 @@ impl MarkdownDocument {
                         list_level += 1;
                     }
                     Tag::Item => {
-                        let text_element = Span::raw("  ".repeat(list_level - 1) + "- ");
+                        let text_element = Span::raw("  ".repeat(list_level - 1) + "• ");
                         line.push(text_element);
                     }
                     Tag::Link { .. } => {
