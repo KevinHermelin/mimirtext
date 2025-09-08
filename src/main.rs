@@ -13,7 +13,10 @@ use ratatui::{
     text::Line,
     widgets::{Block, Clear, Paragraph, Widget},
 };
-use std::{cmp::max, path::PathBuf};
+use std::{
+    cmp::max,
+    path::{Path, PathBuf},
+};
 
 use crate::{
     file_buffer::FileBuffer,
@@ -47,6 +50,7 @@ pub struct App {
     link_selection_index: isize,
     should_exit: bool,
     error_message: Option<String>,
+    navigation_history: Vec<PathBuf>,
 }
 
 enum Action {
@@ -57,6 +61,7 @@ enum Action {
     NextLink,
     PreviousLink,
     FollowLink,
+    NavigateBack,
     DismissError,
 }
 
@@ -68,6 +73,7 @@ impl App {
             link_selection_index: 0,
             should_exit: false,
             error_message: None,
+            navigation_history: vec![],
         };
     }
     fn get_document(&self) -> MarkdownDocument {
@@ -106,6 +112,7 @@ impl App {
             KeyCode::Right => Action::NextLink,
             KeyCode::Left => Action::PreviousLink,
             KeyCode::Enter => Action::FollowLink,
+            KeyCode::Backspace => Action::NavigateBack,
             KeyCode::Char('q') => Action::Exit,
             _ => Action::None,
         };
@@ -120,6 +127,7 @@ impl App {
             Action::PreviousLink => self.move_link_selection(-1),
             Action::FollowLink => self.follow_link(),
             Action::DismissError => self.error_message = None,
+            Action::NavigateBack => self.navigate_back(),
             Action::None => {}
         }
     }
@@ -146,6 +154,7 @@ impl App {
         match self.get_document().selected_link {
             None => return,
             Some(link_ref) => {
+                let old_path = self.buffer.file_path.to_owned();
                 let repository_root = self
                     .buffer
                     .file_path
@@ -155,21 +164,39 @@ impl App {
                 // TODO: Target might be an URL.
                 let target_filename = format!("{}.md", link_ref.target);
                 let target = repository_root.join(&target_filename);
-                if !target.exists() {}
-                let new_buffer = FileBuffer::from_file(&target);
-                match new_buffer {
-                    Err(_) => {
-                        self.error_message = Some(format!(
-                            "Could not open '{}' in current repository.",
-                            &target_filename
-                        ))
-                    }
-                    Ok(new_buffer) => {
-                        self.buffer = new_buffer;
-                        self.link_selection_index = 0;
-                        self.scroll_lines = 0;
-                    }
+
+                let success = self.open_path(&target);
+
+                if success {
+                    self.navigation_history.push(old_path);
                 }
+            }
+        }
+    }
+    fn open_path(&mut self, target: &Path) -> bool {
+        let new_buffer = FileBuffer::from_file(target);
+        match new_buffer {
+            Err(_) => {
+                self.error_message = Some(format!(
+                    "Could not open {:?} in current repository.",
+                    target
+                        .file_name()
+                        .expect("should be able to parse file name")
+                ));
+                false
+            }
+            Ok(new_buffer) => {
+                self.buffer = new_buffer;
+                self.link_selection_index = 0;
+                self.scroll_lines = 0;
+                true
+            }
+        }
+    }
+    fn navigate_back(&mut self) {
+        if let Some(previous) = self.navigation_history.last().cloned() {
+            if self.open_path(&previous) {
+                self.navigation_history.pop();
             }
         }
     }
@@ -413,8 +440,46 @@ mod tests {
         assert_eq!(
             app.error_message,
             Some(String::from(
-                "Could not open 'file_b.md' in current repository."
+                "Could not open \"file_b.md\" in current repository."
             ))
         );
+    }
+
+    #[test]
+    fn test_navigation_history() {
+        let temp_dir = TempDir::new().expect("should be able to create temporary directory");
+
+        let file_a_path = temp_dir.path().join("file_a.md");
+        let file_b_path = temp_dir.path().join("file_b.md");
+        let file_c_path = temp_dir.path().join("file_c.md");
+
+        let mut file_a =
+            File::create(&file_a_path).expect("should be able to create temporary file");
+        let mut file_b =
+            File::create(&file_b_path).expect("should be able to create temporary file");
+        let mut file_c =
+            File::create(&file_c_path).expect("should be able to create temporary file");
+
+        write!(file_a, "This has a link to [[file_b]]")
+            .expect("should be able to write to temporary file");
+        write!(file_b, "This has a link to [[file_c]]")
+            .expect("should be able to write to temporary file");
+        write!(file_c, "This has no links").expect("should be able to write to temporary file");
+
+        let mut app = App::new(
+            FileBuffer::from_file(&file_a_path).expect("should be able to read temporary file"),
+        );
+
+        assert_eq!(app.buffer.file_path, file_a_path);
+        app.handle_action(Action::FollowLink);
+        assert_eq!(app.buffer.file_path, file_b_path);
+        app.handle_action(Action::FollowLink);
+        assert_eq!(app.buffer.file_path, file_c_path);
+        app.handle_action(Action::NavigateBack);
+        assert_eq!(app.buffer.file_path, file_b_path);
+        app.handle_action(Action::NavigateBack);
+        assert_eq!(app.buffer.file_path, file_a_path);
+        app.handle_action(Action::NavigateBack);
+        assert_eq!(app.buffer.file_path, file_a_path);
     }
 }
