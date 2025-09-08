@@ -7,13 +7,13 @@ use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
     DefaultTerminal, Frame,
     buffer::Buffer,
-    layout::Rect,
+    layout::{Constraint, Flex, Layout, Rect},
     style::Stylize,
     symbols::border,
     text::Line,
-    widgets::{Block, Clear, Widget},
+    widgets::{Block, Clear, Paragraph, Widget},
 };
-use std::path::PathBuf;
+use std::{cmp::max, path::PathBuf};
 
 use crate::{
     file_buffer::FileBuffer,
@@ -46,6 +46,7 @@ pub struct App {
     scroll_lines: i16,
     link_selection_index: isize,
     should_exit: bool,
+    error_message: Option<String>,
 }
 
 enum Action {
@@ -56,6 +57,7 @@ enum Action {
     NextLink,
     PreviousLink,
     FollowLink,
+    DismissError,
 }
 
 impl App {
@@ -65,6 +67,7 @@ impl App {
             scroll_lines: 0,
             link_selection_index: 0,
             should_exit: false,
+            error_message: None,
         };
     }
     fn get_document(&self) -> MarkdownDocument {
@@ -92,6 +95,11 @@ impl App {
         Ok(())
     }
     fn handle_key_event(&mut self, key_event: KeyEvent) {
+        if let Some(_) = self.error_message {
+            self.handle_action(Action::DismissError);
+            return;
+        }
+
         let action = match key_event.code {
             KeyCode::Down => Action::ScrollDown,
             KeyCode::Up => Action::ScrollUp,
@@ -111,6 +119,7 @@ impl App {
             Action::NextLink => self.move_link_selection(1),
             Action::PreviousLink => self.move_link_selection(-1),
             Action::FollowLink => self.follow_link(),
+            Action::DismissError => self.error_message = None,
             Action::None => {}
         }
     }
@@ -144,14 +153,34 @@ impl App {
                     .expect("opened file should have a parent");
 
                 // TODO: Target might be an URL.
-                let target = repository_root.join(format!("{}.md", link_ref.target));
-                // TODO: Target file might not exist.
-                self.buffer = FileBuffer::from_file(&target).expect("link target should exist");
-                self.link_selection_index = 0;
-                self.scroll_lines = 0;
+                let target_filename = format!("{}.md", link_ref.target);
+                let target = repository_root.join(&target_filename);
+                if !target.exists() {}
+                let new_buffer = FileBuffer::from_file(&target);
+                match new_buffer {
+                    Err(_) => {
+                        self.error_message = Some(format!(
+                            "Could not open '{}' in current repository.",
+                            &target_filename
+                        ))
+                    }
+                    Ok(new_buffer) => {
+                        self.buffer = new_buffer;
+                        self.link_selection_index = 0;
+                        self.scroll_lines = 0;
+                    }
+                }
             }
         }
     }
+}
+
+fn center(area: Rect, horizontal: Constraint, vertical: Constraint) -> Rect {
+    let [area] = Layout::horizontal([horizontal])
+        .flex(Flex::Center)
+        .areas(area);
+    let [area] = Layout::vertical([vertical]).flex(Flex::Center).areas(area);
+    area
 }
 
 impl Widget for &App {
@@ -176,6 +205,31 @@ impl Widget for &App {
         MarkdownView::new(document)
             .scroll(self.scroll_lines.try_into().unwrap())
             .render(inner_area, buf);
+
+        match &self.error_message {
+            None => {}
+            Some(error) => {
+                let text = error.to_owned().reset();
+                let helper_text = "Press any key to dismiss".dim();
+                let min_width = max(text.width(), helper_text.width()) as u16;
+
+                let area = center(
+                    area,
+                    Constraint::Length(min_width + 6),
+                    Constraint::Length(5),
+                );
+                Clear.render(area, buf);
+                let block = Block::bordered().title("Error").border_set(border::ROUNDED);
+
+                Paragraph::new(vec![
+                    Line::from(text),
+                    Line::from(""),
+                    Line::from(helper_text),
+                ])
+                .block(block)
+                .render(area, buf);
+            }
+        }
     }
 }
 
@@ -190,17 +244,14 @@ mod tests {
 
     #[test]
     fn test_render_buffer() {
-        let app = App {
-            buffer: FileBuffer {
-                file_path: PathBuf::from("example.txt"),
-                content: String::from(
-                    "this should not be visible.\n\nthis is a test file\n\nwith multiple\n\nparagraphs",
-                ),
-            },
-            link_selection_index: 0,
-            scroll_lines: 1,
-            should_exit: false,
-        };
+        let mut app = App::new(FileBuffer {
+            file_path: PathBuf::from("example.txt"),
+            content: String::from(
+                "this should not be visible.\n\nthis is a test file\n\nwith multiple\n\nparagraphs",
+            ),
+        });
+        app.scroll_lines = 1;
+
         let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
         terminal
             .draw(|frame| frame.render_widget(&app, frame.area()))
@@ -209,16 +260,30 @@ mod tests {
     }
 
     #[test]
+    fn test_render_error() {
+        let mut app = App::new(FileBuffer {
+            file_path: PathBuf::from("example.txt"),
+            content: String::from("This is a file."),
+        });
+
+        app.error_message = Some(String::from("This is an error"));
+
+        let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
+        terminal
+            .draw(|frame| frame.render_widget(&app, frame.area()))
+            .unwrap();
+        assert_snapshot!(terminal.backend());
+
+        app.handle_action(Action::DismissError);
+        assert_eq!(app.error_message, None);
+    }
+
+    #[test]
     fn test_handle_scroll_action() {
-        let mut app = App {
-            buffer: FileBuffer {
-                file_path: PathBuf::from("example.txt"),
-                content: String::from("this is a test file\nspanning multiple\nlines"),
-            },
-            link_selection_index: 0,
-            scroll_lines: 0,
-            should_exit: false,
-        };
+        let mut app = App::new(FileBuffer {
+            file_path: PathBuf::from("example.txt"),
+            content: String::from("this is a test file\nspanning multiple\nlines"),
+        });
 
         // Can not scroll up when on first line.
         app.handle_action(Action::ScrollUp);
@@ -236,15 +301,10 @@ mod tests {
 
     #[test]
     fn test_handle_quit_action() {
-        let mut app = App {
-            buffer: FileBuffer {
-                file_path: PathBuf::from("example.txt"),
-                content: String::from("this is a test file\nspanning multiple\nlines"),
-            },
-            link_selection_index: 0,
-            scroll_lines: 0,
-            should_exit: false,
-        };
+        let mut app = App::new(FileBuffer {
+            file_path: PathBuf::from("example.txt"),
+            content: String::from("this is a test file\nspanning multiple\nlines"),
+        });
 
         app.handle_action(Action::Exit);
         assert_eq!(app.should_exit, true);
@@ -322,5 +382,39 @@ mod tests {
         // Link selection and scroll should be reset.
         assert_eq!(app.scroll_lines, 0);
         assert_eq!(app.link_selection_index, 0);
+    }
+
+    #[test]
+    fn test_handle_link_follow_error() {
+        let temp_dir = TempDir::new().expect("should be able to create temporary directory");
+
+        let file_a_path = temp_dir.path().join("file_a.md");
+
+        let mut file_a =
+            File::create(&file_a_path).expect("should be able to create temporary file");
+
+        write!(
+            file_a,
+            "
+# Link error test
+[[file_a|This]] contains two [[file_b|links]], of which the latter does not exist.
+"
+        )
+        .expect("should be able to write to temporary file");
+
+        let mut app = App::new(
+            FileBuffer::from_file(&file_a_path).expect("should be able to read temporary file"),
+        );
+        app.link_selection_index = 1;
+        app.scroll_lines = 1;
+
+        app.handle_action(Action::FollowLink);
+
+        assert_eq!(
+            app.error_message,
+            Some(String::from(
+                "Could not open 'file_b.md' in current repository."
+            ))
+        );
     }
 }
