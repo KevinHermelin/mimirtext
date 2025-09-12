@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 pub struct FileBuffer {
     pub file_path: PathBuf,
     pub content: String,
-    pub created: bool,
 }
 
 impl FileBuffer {
@@ -14,7 +13,6 @@ impl FileBuffer {
             return Ok(FileBuffer {
                 file_path: path.to_path_buf(),
                 content: String::from(""),
-                created: false,
             });
         }
         let mut file = File::open(path)?;
@@ -25,19 +23,7 @@ impl FileBuffer {
         Ok(FileBuffer {
             file_path: path.to_path_buf(),
             content: content,
-            created: true,
         })
-    }
-}
-
-#[cfg(test)]
-impl FileBuffer {
-    pub fn mock(content: &str) -> Self {
-        FileBuffer {
-            content: content.to_owned(),
-            file_path: PathBuf::from("mock.txt"),
-            created: true,
-        }
     }
 }
 
@@ -67,6 +53,5 @@ mod tests {
 
         assert_eq!(buffer.content, "");
         assert_eq!(buffer.file_path, path);
-        assert_eq!(buffer.created, false);
     }
 }

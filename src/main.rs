@@ -1,5 +1,6 @@
 mod file_buffer;
 mod markdown_view;
+mod repository;
 
 use clap::{Parser, command};
 use color_eyre::Result;
@@ -24,8 +25,8 @@ use std::{
 };
 
 use crate::{
-    file_buffer::FileBuffer,
     markdown_view::{MarkdownDocument, MarkdownView},
+    repository::{FolderRepository, Note, Repository},
 };
 
 #[derive(Parser)]
@@ -38,9 +39,7 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     let file_path = cli.file_path;
-    let buffer = FileBuffer::from_file(&file_path).expect("should be able to read file");
-
-    let mut app = App::new(buffer);
+    let mut app = App::from_path(&file_path);
 
     color_eyre::install()?;
     let mut terminal = ratatui::init();
@@ -50,13 +49,14 @@ fn main() -> Result<()> {
 }
 
 pub struct App {
-    buffer: FileBuffer,
+    repository: Box<dyn Repository>,
+    note: Box<dyn Note>,
     scroll_lines: i16,
     link_selection_index: isize,
     should_exit: bool,
     should_edit: bool,
     error_message: Option<String>,
-    navigation_history: Vec<PathBuf>,
+    navigation_history: Vec<String>,
 }
 
 enum Action {
@@ -73,9 +73,10 @@ enum Action {
 }
 
 impl App {
-    fn new(buffer: FileBuffer) -> Self {
+    fn new(repository: Box<dyn Repository>, note: Box<dyn Note>) -> Self {
         return App {
-            buffer,
+            repository,
+            note,
             scroll_lines: 0,
             link_selection_index: 0,
             should_exit: false,
@@ -84,8 +85,15 @@ impl App {
             navigation_history: vec![],
         };
     }
+    fn from_path(path: &Path) -> Self {
+        let (repo, note) = FolderRepository::open_path(&path);
+        let repo = repo.expect("path should point to note inside valid repository");
+        let note = note.expect("path should point to valid note");
+
+        App::new(Box::new(repo), Box::new(note))
+    }
     fn get_document(&self) -> MarkdownDocument {
-        let mut document = MarkdownDocument::new(&self.buffer.content);
+        let mut document = MarkdownDocument::new(&self.note.content());
         document.selected_link = document
             .get_links()
             .get::<usize>(self.link_selection_index.try_into().unwrap())
@@ -108,8 +116,7 @@ impl App {
     fn edit_file(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
         stdout().execute(LeaveAlternateScreen)?;
         disable_raw_mode()?;
-        edit::edit_file(&self.buffer.file_path)?;
-        self.open_path(&self.buffer.file_path.to_owned());
+        self.note.edit_externally()?;
         stdout().execute(EnterAlternateScreen)?;
         enable_raw_mode()?;
         terminal.clear()?;
@@ -162,7 +169,7 @@ impl App {
         frame.render_widget(self, frame.area());
     }
     fn move_scroll(&mut self, lines: i16) {
-        let number_of_lines: i16 = self.buffer.content.lines().count().try_into().unwrap();
+        let number_of_lines: i16 = self.note.content().lines().count().try_into().unwrap();
 
         self.scroll_lines = (self.scroll_lines + lines).clamp(0, number_of_lines - 1);
     }
@@ -180,39 +187,28 @@ impl App {
         match self.get_document().selected_link {
             None => return,
             Some(link_ref) => {
-                let old_path = self.buffer.file_path.to_owned();
-                let repository_root = self
-                    .buffer
-                    .file_path
-                    .parent()
-                    .expect("opened file should have a parent");
-
-                // TODO: Target might be an URL.
-                let target_filename = format!("{}.md", link_ref.target);
-                let target = repository_root.join(&target_filename);
-
-                let success = self.open_path(&target);
+                let old_id = self.note.id().to_owned();
+                let new_id = self.repository.resolve_reference(&link_ref.target);
+                let success = self.open_path(&new_id);
 
                 if success {
-                    self.navigation_history.push(old_path);
+                    self.navigation_history.push(old_id);
                 }
             }
         }
     }
-    fn open_path(&mut self, target: &Path) -> bool {
-        let new_buffer = FileBuffer::from_file(target);
-        match new_buffer {
+    fn open_path(&mut self, id: &str) -> bool {
+        let new_note = self.repository.get_note(id);
+        match new_note {
             Err(_) => {
                 self.error_message = Some(format!(
-                    "Could not open {:?} in current repository.",
-                    target
-                        .file_name()
-                        .expect("should be able to parse file name")
+                    "Could not open \"{:?}\" in current repository.",
+                    id
                 ));
                 false
             }
-            Ok(new_buffer) => {
-                self.buffer = new_buffer;
+            Ok(new_note) => {
+                self.note = new_note;
                 self.link_selection_index = 0;
                 self.scroll_lines = 0;
                 true
@@ -238,7 +234,7 @@ fn center(area: Rect, horizontal: Constraint, vertical: Constraint) -> Rect {
 
 impl Widget for &App {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let title = Line::from(self.buffer.file_path.display().to_string().bold());
+        let title = Line::from(self.note.name().to_string().bold());
         let instructions = Line::from(vec![" Exit ".into(), "<Q> ".blue().bold()]);
         let block = Block::bordered()
             .title(title.centered())
@@ -254,8 +250,8 @@ impl Widget for &App {
             .scroll(self.scroll_lines.try_into().unwrap())
             .render(inner_area, buf);
 
-        if !self.buffer.created {
-            let text = "This file has not been created yet".bold();
+        if self.note.content() == "" {
+            let text = "This note is empty".bold();
             let helper_text = "Press <C> to open in editor".dim();
             let min_width = max(text.width(), helper_text.width()) as u16;
 
@@ -296,18 +292,20 @@ impl Widget for &App {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs::File, io::Write};
-
     use super::*;
+    use crate::repository::InMemoryRepository;
     use insta::assert_snapshot;
     use ratatui::{Terminal, backend::TestBackend};
-    use tempfile::TempDir;
 
     #[test]
     fn test_render_buffer() {
-        let mut app = App::new(FileBuffer::mock(
+        let mut repository = InMemoryRepository::default();
+        let note = repository.insert_note(
+            "Note name.md",
             "this should not be visible.\n\nthis is a test file\n\nwith multiple\n\nparagraphs",
-        ));
+        );
+        let mut app = App::new(Box::new(repository), note);
+
         app.scroll_lines = 1;
 
         let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
@@ -319,7 +317,9 @@ mod tests {
 
     #[test]
     fn test_render_error() {
-        let mut app = App::new(FileBuffer::mock("This is a file."));
+        let mut repository = InMemoryRepository::default();
+        let note = repository.insert_note("Note name.md", "This is a file.");
+        let mut app = App::new(Box::new(repository), note);
 
         app.error_message = Some(String::from("This is an error"));
 
@@ -335,10 +335,9 @@ mod tests {
 
     #[test]
     fn test_render_new_file() {
-        let app = App::new(
-            FileBuffer::from_file(&PathBuf::from("nonexistent.md"))
-                .expect("should be able to create FileBuffer for non-existent file"),
-        );
+        let mut repository = InMemoryRepository::default();
+        let note = repository.get_note("nonexistent.md").unwrap();
+        let app = App::new(Box::new(repository), note);
 
         let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
         terminal
@@ -349,9 +348,12 @@ mod tests {
 
     #[test]
     fn test_handle_scroll_action() {
-        let mut app = App::new(FileBuffer::mock(
+        let mut repository = InMemoryRepository::default();
+        let note = repository.insert_note(
+            "Note name.md",
             "this is a test file\nspanning multiple\nlines",
-        ));
+        );
+        let mut app = App::new(Box::new(repository), note);
 
         // Can not scroll up when on first line.
         app.handle_action(Action::ScrollUp);
@@ -369,9 +371,9 @@ mod tests {
 
     #[test]
     fn test_handle_quit_action() {
-        let mut app = App::new(FileBuffer::mock(
-            "this is a test file\nspanning multiple\nlines",
-        ));
+        let mut repository = InMemoryRepository::default();
+        let note = repository.insert_note("Note name.md", "this is a test file");
+        let mut app = App::new(Box::new(repository), note);
 
         app.handle_action(Action::Exit);
         assert_eq!(app.should_exit, true);
@@ -379,9 +381,13 @@ mod tests {
 
     #[test]
     fn test_handle_link_selection() {
-        let mut app = App::new(FileBuffer::mock(
+        let mut repository = InMemoryRepository::default();
+        let note_with_link = repository.insert_note(
+            "Note name.md",
             "[[This]] file [[Have|has]] multiple [links](url.com)",
-        ));
+        );
+        let note_without_link = repository.insert_note("Note name.md", "This file has no link");
+        let mut app = App::new(Box::new(repository), note_with_link);
 
         assert_eq!(app.link_selection_index, 0);
 
@@ -400,8 +406,7 @@ mod tests {
         app.handle_action(Action::PreviousLink);
         assert_eq!(app.link_selection_index, 1);
 
-        let mut app = App::new(FileBuffer::mock("This file has no link"));
-
+        app.open_path(note_without_link.id());
         assert_eq!(app.link_selection_index, 0);
 
         app.handle_action(Action::NextLink);
@@ -410,37 +415,22 @@ mod tests {
 
     #[test]
     fn test_handle_link_follow() {
-        let temp_dir = TempDir::new().expect("should be able to create temporary directory");
-
-        let file_a_path = temp_dir.path().join("file_a.md");
-        let file_b_path = temp_dir.path().join("file_b.md");
-
-        let mut file_a =
-            File::create(&file_a_path).expect("should be able to create temporary file");
-        let mut file_b =
-            File::create(&file_b_path).expect("should be able to create temporary file");
-
-        write!(
-            file_a,
-            "
-# Link test
-[[file_a|This]] contains two [[file_b|links]].
-"
-        )
-        .expect("should be able to write to temporary file");
-        write!(file_b, "This is the other file")
-            .expect("should be able to write to temporary file");
-
-        let mut app = App::new(
-            FileBuffer::from_file(&file_a_path).expect("should be able to read temporary file"),
+        let mut repository = InMemoryRepository::default();
+        let file_a = repository.insert_note(
+            "file_a.md",
+            "[[file_a|This]] contains two [[file_b|links]].",
         );
+        repository.insert_note("file_b.md", "This is the other file");
+        let mut app = App::new(Box::new(repository), file_a);
+
         app.link_selection_index = 1;
         app.scroll_lines = 1;
 
         app.handle_action(Action::FollowLink);
 
-        assert_eq!(app.buffer.file_path, file_b_path);
-        assert_eq!(app.buffer.content, "This is the other file");
+        assert_eq!(app.note.id(), "file_b.md");
+        assert_eq!(app.note.name(), "file_b.md");
+        assert_eq!(app.note.content(), "This is the other file");
 
         // Link selection and scroll should be reset.
         assert_eq!(app.scroll_lines, 0);
@@ -449,46 +439,32 @@ mod tests {
 
     #[test]
     fn test_handle_edit_file() {
-        let mut app = App::new(FileBuffer::mock("This is a file"));
+        let mut repository = InMemoryRepository::default();
+        let note = repository.insert_note("Note name.md", "this is a test file");
+        let mut app = App::new(Box::new(repository), note);
+
         app.handle_action(Action::EditFile);
         assert_eq!(app.should_edit, true)
     }
 
     #[test]
     fn test_navigation_history() {
-        let temp_dir = TempDir::new().expect("should be able to create temporary directory");
+        let mut repository = InMemoryRepository::default();
+        let file_a = repository.insert_note("file_a.md", "This has a link to [[file_b]].");
+        repository.insert_note("file_b.md", "This has a link to [[file_c]]");
+        repository.insert_note("file_c.md", "This has no links");
+        let mut app = App::new(Box::new(repository), file_a);
 
-        let file_a_path = temp_dir.path().join("file_a.md");
-        let file_b_path = temp_dir.path().join("file_b.md");
-        let file_c_path = temp_dir.path().join("file_c.md");
-
-        let mut file_a =
-            File::create(&file_a_path).expect("should be able to create temporary file");
-        let mut file_b =
-            File::create(&file_b_path).expect("should be able to create temporary file");
-        let mut file_c =
-            File::create(&file_c_path).expect("should be able to create temporary file");
-
-        write!(file_a, "This has a link to [[file_b]]")
-            .expect("should be able to write to temporary file");
-        write!(file_b, "This has a link to [[file_c]]")
-            .expect("should be able to write to temporary file");
-        write!(file_c, "This has no links").expect("should be able to write to temporary file");
-
-        let mut app = App::new(
-            FileBuffer::from_file(&file_a_path).expect("should be able to read temporary file"),
-        );
-
-        assert_eq!(app.buffer.file_path, file_a_path);
+        assert_eq!(app.note.id(), "file_a.md");
         app.handle_action(Action::FollowLink);
-        assert_eq!(app.buffer.file_path, file_b_path);
+        assert_eq!(app.note.id(), "file_b.md");
         app.handle_action(Action::FollowLink);
-        assert_eq!(app.buffer.file_path, file_c_path);
+        assert_eq!(app.note.id(), "file_c.md");
         app.handle_action(Action::NavigateBack);
-        assert_eq!(app.buffer.file_path, file_b_path);
+        assert_eq!(app.note.id(), "file_b.md");
         app.handle_action(Action::NavigateBack);
-        assert_eq!(app.buffer.file_path, file_a_path);
+        assert_eq!(app.note.id(), "file_a.md");
         app.handle_action(Action::NavigateBack);
-        assert_eq!(app.buffer.file_path, file_a_path);
+        assert_eq!(app.note.id(), "file_a.md");
     }
 }
