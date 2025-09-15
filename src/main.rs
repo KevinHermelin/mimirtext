@@ -294,13 +294,13 @@ impl Widget for &App {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::repository::InMemoryRepository;
+    use crate::repository::MockRepository;
     use insta::assert_snapshot;
     use ratatui::{Terminal, backend::TestBackend};
 
     #[test]
     fn test_render_buffer() {
-        let mut repository = InMemoryRepository::new();
+        let mut repository = MockRepository::new();
         let note = repository.insert_note(
             "Note name.md",
             "this should not be visible.\n\nthis is a test file\n\nwith multiple\n\nparagraphs",
@@ -318,7 +318,7 @@ mod tests {
 
     #[test]
     fn test_render_error() {
-        let mut repository = InMemoryRepository::new();
+        let mut repository = MockRepository::new();
         let note = repository.insert_note("Note name.md", "This is a file.");
         let mut app = App::new(Box::new(repository), note);
 
@@ -336,7 +336,7 @@ mod tests {
 
     #[test]
     fn test_render_new_file() {
-        let repository = InMemoryRepository::new();
+        let repository = MockRepository::new();
         let note = repository.note("nonexistent.md").unwrap();
         let app = App::new(Box::new(repository), note);
 
@@ -349,7 +349,7 @@ mod tests {
 
     #[test]
     fn test_handle_scroll_action() {
-        let mut repository = InMemoryRepository::new();
+        let mut repository = MockRepository::new();
         let note = repository.insert_note(
             "Note name.md",
             "this is a test file\nspanning multiple\nlines",
@@ -372,7 +372,7 @@ mod tests {
 
     #[test]
     fn test_handle_quit_action() {
-        let mut repository = InMemoryRepository::new();
+        let mut repository = MockRepository::new();
         let note = repository.insert_note("Note name.md", "this is a test file");
         let mut app = App::new(Box::new(repository), note);
 
@@ -382,7 +382,7 @@ mod tests {
 
     #[test]
     fn test_handle_link_selection() {
-        let mut repository = InMemoryRepository::new();
+        let mut repository = MockRepository::new();
         let note_with_link = repository.insert_note(
             "Note name.md",
             "[[This]] file [[Have|has]] multiple [links](url.com)",
@@ -416,7 +416,7 @@ mod tests {
 
     #[test]
     fn test_handle_link_follow() {
-        let mut repository = InMemoryRepository::new();
+        let mut repository = MockRepository::new();
 
         let note_a = repository.insert_note(
             "note A.md",
@@ -440,7 +440,7 @@ mod tests {
 
     #[test]
     fn test_handle_edit_file() {
-        let mut repository = InMemoryRepository::new();
+        let mut repository = MockRepository::new();
 
         let note = repository.insert_note("Note name.md", "this is a test file");
 
@@ -452,7 +452,7 @@ mod tests {
 
     #[test]
     fn test_navigation_history() {
-        let mut repository = InMemoryRepository::new();
+        let mut repository = MockRepository::new();
 
         let note_a = repository.insert_note("note A.md", "This has a link to [[note B]].");
         let note_b = repository.insert_note("note B.md", "This has a link to [[note C]]");

@@ -142,15 +142,15 @@ impl Repository for FolderRepository {
 }
 
 #[cfg(test)]
-pub struct InMemoryRepository {
+pub struct MockRepository {
     notes: HashMap<String, NoteSnapshot>,
     id: String,
 }
 
 #[cfg(test)]
-impl InMemoryRepository {
+impl MockRepository {
     pub fn new() -> Self {
-        InMemoryRepository {
+        MockRepository {
             notes: HashMap::new(),
             id: Uuid::new_v4().to_string(),
         }
@@ -176,7 +176,7 @@ impl InMemoryRepository {
 }
 
 #[cfg(test)]
-impl Repository for InMemoryRepository {
+impl Repository for MockRepository {
     fn resolve_reference(&self, reference: &str) -> String {
         format!("{}.md", reference)
     }
