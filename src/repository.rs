@@ -73,12 +73,14 @@ pub struct FolderRepository {
 
 impl FolderRepository {
     pub fn new(root: &Path) -> io::Result<Self> {
+        let root = fs::canonicalize(root)?;
         Ok(FolderRepository {
-            root: root.to_owned(),
-            id: name_from_path(root)?.to_owned(),
+            id: name_from_path(&root)?.to_owned(),
+            root: root,
         })
     }
     pub fn open_path(path: &Path) -> io::Result<(Self, Option<NoteSnapshot>)> {
+        let path = path.canonicalize()?;
         if path.is_file() {
             let repo_path = path
                 .parent()
@@ -86,13 +88,13 @@ impl FolderRepository {
 
             let repo = Self::new(repo_path)?;
 
-            let note_id = name_from_path(path)?.to_owned();
+            let note_id = name_from_path(&path)?.to_owned();
             let note = repo.note(&note_id)?;
 
             return Ok((repo, Some(note)));
         }
         if path.is_dir() {
-            let repo = Self::new(path)?;
+            let repo = Self::new(&path)?;
             return Ok((repo, None));
         }
         Err(io::Error::new(
@@ -200,6 +202,7 @@ impl Repository for InMemoryRepository {
 
 #[cfg(test)]
 mod tests {
+    use std::env::set_current_dir;
     use tempfile::TempDir;
 
     use super::*;
@@ -246,7 +249,34 @@ mod tests {
         assert_eq!(
             repo,
             FolderRepository {
-                root: repo_path,
+                root: repo_path.clone(),
+                id: String::from("repository")
+            }
+        );
+
+        // It should also work if the current directory is inside the repository.
+        set_current_dir(&repo_path)?;
+
+        let repo = FolderRepository::new(&PathBuf::from("."))?;
+
+        assert_eq!(
+            repo,
+            FolderRepository {
+                root: repo_path.clone(),
+                id: String::from("repository")
+            }
+        );
+
+        // Or if in a subfolder of the repository, using "..".
+        fs::create_dir("subfolder")?;
+        set_current_dir(&repo_path.join("subfolder"))?;
+
+        let repo = FolderRepository::new(&PathBuf::from(".."))?;
+
+        assert_eq!(
+            repo,
+            FolderRepository {
+                root: repo_path.clone(),
                 id: String::from("repository")
             }
         );
@@ -300,7 +330,14 @@ mod tests {
         let (repo, note) = FolderRepository::open_path(&repo_path.join("note.md"))?;
 
         assert_eq!(repo, expected_repo);
-        assert_eq!(note, Some(expected_note));
+        assert_eq!(note, Some(expected_note.clone()));
+
+        // It should also work if pointing to a file inside the current directory.
+        set_current_dir(repo_path)?;
+        let (repo, note) = FolderRepository::open_path(&Path::new("note.md"))?;
+
+        assert_eq!(repo, expected_repo);
+        assert_eq!(note, Some(expected_note.clone()));
 
         Ok(())
     }
