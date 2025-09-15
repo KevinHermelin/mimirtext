@@ -1,97 +1,107 @@
 #[cfg(test)]
 use std::collections::HashMap;
 use std::{
-    io,
+    fs::{self},
+    io::{self, ErrorKind},
     path::{Path, PathBuf},
 };
+#[cfg(test)]
+use uuid::Uuid;
 
-use crate::file_buffer::FileBuffer;
+#[derive(Clone, Debug, PartialEq)]
+pub struct NoteKey(String, String);
 
-pub trait Note {
-    fn content(&self) -> &str;
-    fn name(&self) -> &str;
-    fn id(&self) -> &str;
-    fn edit_externally(&mut self) -> io::Result<()>;
+impl NoteKey {
+    pub fn note_id(&self) -> &str {
+        &self.1
+    }
 }
 
-pub trait Repository {
-    fn resolve_reference(&self, reference: &str) -> String;
-    fn get_note(&mut self, id: &str) -> io::Result<Box<dyn Note>>;
+impl From<(&str, &str)> for NoteKey {
+    fn from(value: (&str, &str)) -> Self {
+        let (repo_id, note_id) = value;
+        NoteKey(repo_id.to_owned(), note_id.to_owned())
+    }
 }
 
-pub struct FileNote {
-    note_name: String,
-    note_id: String,
-    file_buffer: FileBuffer,
+#[derive(Clone, Debug, PartialEq)]
+pub enum NoteState {
+    New,
+    Exists,
 }
 
-fn name_from_path(file_path: &Path) -> Option<&str> {
-    file_path.file_name().and_then(|os_str| os_str.to_str())
+#[derive(Clone, Debug, PartialEq)]
+pub struct NoteSnapshot {
+    pub key: NoteKey,
+    pub title: String,
+    pub body: String,
+    pub state: NoteState,
 }
 
-impl FileNote {
-    fn new(id: &str, file_buffer: FileBuffer) -> Self {
-        let name =
-            name_from_path(&file_buffer.file_path).expect("note should have a readable name");
+impl NoteSnapshot {
+    fn new_note(key: &NoteKey) -> Self {
+        let NoteKey(_, id) = key;
 
-        FileNote {
-            note_name: name.to_owned(),
-            note_id: id.to_owned(),
-            file_buffer,
+        NoteSnapshot {
+            key: key.to_owned(),
+            title: id.to_owned(),
+            body: String::new(),
+            state: NoteState::New,
         }
     }
 }
 
-impl Note for FileNote {
-    fn content(&self) -> &str {
-        &self.file_buffer.content
-    }
-
-    fn name(&self) -> &str {
-        &self.note_name
-    }
-
-    fn id(&self) -> &str {
-        &self.note_id
-    }
-
-    fn edit_externally(&mut self) -> io::Result<()> {
-        edit::edit_file(&self.file_buffer.file_path)?;
-        self.file_buffer = FileBuffer::from_file(&self.file_buffer.file_path)?;
-        Ok(())
-    }
+pub trait Repository {
+    fn id(&self) -> &str;
+    fn resolve_reference(&self, reference: &str) -> String;
+    fn note(&self, id: &str) -> io::Result<NoteSnapshot>;
+    fn edit_externally(&mut self, id: &str) -> io::Result<()>;
 }
 
-#[derive(Debug)]
+fn name_from_path(file_path: &Path) -> io::Result<&str> {
+    file_path
+        .file_name()
+        .and_then(|os_str| os_str.to_str())
+        .ok_or(io::Error::new(ErrorKind::Other, "No readable name"))
+}
+
+#[derive(Debug, PartialEq)]
 pub struct FolderRepository {
+    id: String,
     root: PathBuf,
 }
 
 impl FolderRepository {
-    pub fn open_path(path: &Path) -> (Option<Self>, Option<FileNote>) {
+    pub fn new(root: &Path) -> io::Result<Self> {
+        Ok(FolderRepository {
+            root: root.to_owned(),
+            id: name_from_path(root)?.to_owned(),
+        })
+    }
+    pub fn open_path(path: &Path) -> io::Result<(Self, Option<NoteSnapshot>)> {
         if path.is_file() {
-            let repo = path
+            let repo_path = path
                 .parent()
-                .filter(|path| path.is_dir())
-                .map(|path| FolderRepository {
-                    root: path.to_owned(),
-                });
+                .ok_or(io::Error::from(ErrorKind::NotADirectory))?;
 
-            let id =
-                name_from_path(&path).expect("path should point to file with readable file name");
-            let note = FileBuffer::from_file(path)
-                .ok()
-                .map(|file_buffer| FileNote::new(id, file_buffer));
+            let repo = Self::new(repo_path)?;
 
-            return (repo, note);
+            let note_id = name_from_path(path)?.to_owned();
+            let note = repo.note(&note_id)?;
+
+            return Ok((repo, Some(note)));
         }
         if path.is_dir() {
-            let repo = Some(FolderRepository {
-                root: path.to_owned(),
-            });
-            return (repo, None);
+            let repo = Self::new(path)?;
+            return Ok((repo, None));
         }
-        (None, None)
+        Err(io::Error::new(
+            io::ErrorKind::Other,
+            "Path is neither a note nor a repository",
+        ))
+    }
+    fn get_note_path(&self, id: &str) -> PathBuf {
+        self.root.join(id)
     }
 }
 
@@ -100,62 +110,66 @@ impl Repository for FolderRepository {
         format!("{}.md", reference)
     }
 
-    fn get_note(&mut self, id: &str) -> io::Result<Box<dyn Note>> {
-        let full_path = self.root.join(id);
+    fn note(&self, note_id: &str) -> io::Result<NoteSnapshot> {
+        let full_path = self.get_note_path(note_id);
+        let name = name_from_path(&full_path)?;
 
-        let file_buffer = FileBuffer::from_file(&full_path)?;
-        let note = FileNote::new(id, file_buffer);
-        Ok(Box::new(note))
-    }
-}
+        let key = NoteKey(self.id().to_owned(), name.to_owned());
+        let title = name.to_owned();
 
-#[cfg(test)]
-#[derive(Clone)]
-pub struct InMemoryNote {
-    note_content: String,
-    note_name: String,
-    note_id: String,
-}
+        if !fs::exists(&full_path)? {
+            return Ok(NoteSnapshot::new_note(&key));
+        }
 
-#[cfg(test)]
-impl Note for InMemoryNote {
-    fn content(&self) -> &str {
-        &self.note_content
-    }
-
-    fn name(&self) -> &str {
-        &self.note_name
+        let body = fs::read_to_string(&full_path)?;
+        Ok(NoteSnapshot {
+            key,
+            title,
+            body,
+            state: NoteState::Exists,
+        })
     }
 
     fn id(&self) -> &str {
-        &self.note_id
+        &self.id
     }
 
-    fn edit_externally(&mut self) -> io::Result<()> {
-        todo!()
+    fn edit_externally(&mut self, id: &str) -> io::Result<()> {
+        edit::edit_file(self.get_note_path(id))
     }
 }
 
 #[cfg(test)]
-#[derive(Default)]
 pub struct InMemoryRepository {
-    notes: HashMap<String, InMemoryNote>,
+    notes: HashMap<String, NoteSnapshot>,
+    id: String,
 }
 
 #[cfg(test)]
 impl InMemoryRepository {
-    pub fn insert_note(&mut self, id: &str, content: &str) -> Box<InMemoryNote> {
-        let name = id;
+    pub fn new() -> Self {
+        InMemoryRepository {
+            notes: HashMap::new(),
+            id: Uuid::new_v4().to_string(),
+        }
+    }
+    pub fn insert_note(&mut self, id: &str, content: &str) -> NoteSnapshot {
+        let title = id.to_owned();
+        let id = id.to_owned();
+        let body = content.to_owned();
 
-        let note = InMemoryNote {
-            note_name: name.to_owned(),
-            note_content: content.to_owned(),
-            note_id: id.to_owned(),
+        let key = NoteKey(self.id().to_owned(), id.clone());
+
+        let note = NoteSnapshot {
+            key,
+            title,
+            body,
+            state: NoteState::Exists,
         };
 
-        self.notes.insert(id.to_owned(), note.to_owned());
+        self.notes.insert(id, note.clone());
 
-        Box::new(note)
+        note
     }
 }
 
@@ -165,110 +179,145 @@ impl Repository for InMemoryRepository {
         format!("{}.md", reference)
     }
 
-    fn get_note(&mut self, id: &str) -> io::Result<Box<dyn Note>> {
+    fn note(&self, id: &str) -> io::Result<NoteSnapshot> {
+        let note_key = NoteKey(self.id().to_owned(), id.to_owned());
         let note = self
             .notes
             .get(id)
             .cloned()
-            .map(Box::new)
-            .unwrap_or_else(|| self.insert_note(id, ""));
+            .unwrap_or(NoteSnapshot::new_note(&note_key));
         Ok(note)
+    }
+
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn edit_externally(&mut self, _: &str) -> io::Result<()> {
+        todo!()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use anyhow::Result;
-    use std::{fs::File, io::Write};
     use tempfile::TempDir;
 
     use super::*;
 
-    #[test]
-    fn test_file_note_properties() {
-        let file_note = FileNote::new(
-            "text.md",
-            FileBuffer {
-                file_path: PathBuf::from("text.md"),
-                content: String::from("It has content"),
-            },
-        );
+    fn create_temp_repo_path(name: &str) -> io::Result<(TempDir, PathBuf)> {
+        let temp_dir = TempDir::new()?;
+        let repo_dir_path = temp_dir.path().join(name);
+        fs::create_dir(&repo_dir_path)?;
 
-        assert_eq!(file_note.content(), "It has content");
-        assert_eq!(file_note.name(), "text.md");
-        assert_eq!(file_note.id(), "text.md");
+        Ok((temp_dir, repo_dir_path))
+    }
+
+    fn create_note(repo_path: &Path, name: &str, content: &str) -> io::Result<PathBuf> {
+        let note_path = repo_path.join(name);
+        fs::write(&note_path, content)?;
+
+        Ok(note_path)
     }
 
     #[test]
-    fn test_folder_repository_open_path() -> Result<()> {
-        let directory = TempDir::new()?;
-        let directory_path = directory.path();
+    fn test_note_key_getters() {
+        assert_eq!(
+            NoteKey(String::from("repo_b"), String::from("note_b")).note_id(),
+            "note_b"
+        );
+    }
 
-        let note_path = directory_path.join("note.md");
+    #[test]
+    fn test_name_from_path() -> io::Result<()> {
+        let dir_path = PathBuf::from("points/to/directory");
+        let file_path = PathBuf::from("points/to/file.md");
 
-        let mut note_file = File::create(&note_path)?;
-        write!(note_file, "This is the content")?;
-
-        let (repo, note) = FolderRepository::open_path(directory_path);
-        assert!(repo.is_some_and(|repo| repo.root == directory.path()));
-        assert!(note.is_none());
-
-        let (repo, note) = FolderRepository::open_path(&directory_path.join("note.md"));
-        assert!(repo.is_some_and(|repo| repo.root == directory.path()));
-        assert!(note.is_some_and(|note| note.name() == "note.md"
-            && note.content() == "This is the content"
-            && note.id() == "note.md"));
-
-        // There are two additional possibilities, repo could be missing while note exists and both could be missing.
+        assert_eq!(name_from_path(&dir_path)?, "directory");
+        assert_eq!(name_from_path(&file_path)?, "file.md");
 
         Ok(())
     }
 
     #[test]
-    fn test_folder_repository_resolve_path() {
-        let folder_repo = FolderRepository {
-            root: PathBuf::new(),
-        };
+    fn test_folder_repository_new() -> io::Result<()> {
+        let (_tempdir, repo_path) = create_temp_repo_path("repository")?;
+        let repo = FolderRepository::new(&repo_path)?;
 
-        assert_eq!(folder_repo.resolve_reference("note"), "note.md");
         assert_eq!(
-            folder_repo.resolve_reference("subfolder/another_note"),
+            repo,
+            FolderRepository {
+                root: repo_path,
+                id: String::from("repository")
+            }
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_folder_repository_get_note() -> io::Result<()> {
+        let (_tempdir, repo_path) = create_temp_repo_path("repository")?;
+        create_note(&repo_path, "note.md", "This is the content")?;
+
+        let repo = FolderRepository::new(&repo_path)?;
+
+        assert_eq!(
+            repo.note(&String::from("note.md"))?,
+            NoteSnapshot {
+                key: NoteKey::from(("repository", "note.md")),
+                title: String::from("note.md"),
+                body: String::from("This is the content"),
+                state: NoteState::Exists
+            }
+        );
+
+        assert_eq!(
+            repo.note(&String::from("new_note.md"))?,
+            NoteSnapshot {
+                key: NoteKey::from(("repository", "new_note.md")),
+                title: String::from("new_note.md"),
+                body: String::new(),
+                state: NoteState::New
+            }
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_folder_repository_open_path() -> io::Result<()> {
+        let (_tempdir, repo_path) = create_temp_repo_path("repository")?;
+        create_note(&repo_path, "note.md", "This is the content")?;
+
+        let expected_repo = FolderRepository::new(&repo_path)?;
+        let expected_note = expected_repo.note(&String::from("note.md"))?;
+
+        let (repo, note) = FolderRepository::open_path(&repo_path)?;
+
+        assert_eq!(repo, expected_repo);
+        assert_eq!(note, None);
+
+        let (repo, note) = FolderRepository::open_path(&repo_path.join("note.md"))?;
+
+        assert_eq!(repo, expected_repo);
+        assert_eq!(note, Some(expected_note));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_folder_repository_resolve_reference() -> io::Result<()> {
+        let (_tempdir, repo_path) = create_temp_repo_path("repository")?;
+        create_note(&repo_path, "note.md", "This is the content")?;
+
+        let repo = FolderRepository::new(&repo_path)?;
+
+        assert_eq!(repo.resolve_reference("note"), "note.md");
+        assert_eq!(
+            repo.resolve_reference("subfolder/another_note"),
             "subfolder/another_note.md"
         );
-    }
 
-    #[test]
-    fn test_folder_repository_get_note() -> Result<()> {
-        let directory = TempDir::new()?;
-        let mut note_file = File::create(directory.path().join("note.md"))?;
-        write!(note_file, "This is the content")?;
-
-        let (folder_repo, _) = FolderRepository::open_path(directory.path());
-        let mut folder_repo = folder_repo.expect("should be a valid folder repo");
-
-        let note = folder_repo
-            .get_note("note.md")
-            .expect("should be able to get note");
-
-        assert_eq!(note.name(), "note.md");
-        assert_eq!(note.content(), "This is the content");
-        assert_eq!(note.id(), "note.md");
-        Ok(())
-    }
-
-    #[test]
-    fn test_folder_repository_get_new_note() -> Result<()> {
-        let directory = TempDir::new()?;
-
-        let (folder_repo, _) = FolderRepository::open_path(directory.path());
-        let mut folder_repo = folder_repo.expect("should be a valid folder repo");
-
-        let note = folder_repo
-            .get_note("non-existent note.md")
-            .expect("should be able to get note");
-        assert_eq!(note.name(), "non-existent note.md");
-        assert_eq!(note.content(), "");
-        assert_eq!(note.id(), "non-existent note.md");
         Ok(())
     }
 }
