@@ -5,13 +5,14 @@ use clap::{Parser, command};
 use color_eyre::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
-    DefaultTerminal, Frame,
+    Frame, Terminal,
     buffer::Buffer,
     crossterm::{
         ExecutableCommand,
         terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
     },
     layout::{Alignment, Constraint, Flex, Layout, Rect},
+    prelude::Backend,
     style::Stylize,
     symbols::border,
     text::Line,
@@ -101,25 +102,32 @@ impl App {
             .cloned();
         document
     }
-    fn run(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
+    fn run(&mut self, terminal: &mut Terminal<impl Backend>) -> Result<()> {
         while !self.should_exit {
             terminal.draw(|frame| self.draw(frame))?;
             self.handle_event()?;
 
             if self.should_edit {
-                self.edit_file(terminal)
+                self.edit_file(terminal, &mut stdout(), &mut DefaultRawModeControl)
                     .expect("should be able to edit file");
                 self.should_edit = false;
             }
         }
         Ok(())
     }
-    fn edit_file(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
-        stdout().execute(LeaveAlternateScreen)?;
-        disable_raw_mode()?;
-        self.repository.edit_externally(self.note.key.note_id())?;
-        stdout().execute(EnterAlternateScreen)?;
-        enable_raw_mode()?;
+    fn edit_file(
+        &mut self,
+        terminal: &mut Terminal<impl Backend>,
+        executor: &mut impl ExecutableCommand,
+        raw_mode_control: &mut impl RawModeControl,
+    ) -> Result<()> {
+        executor.execute(LeaveAlternateScreen)?;
+        raw_mode_control.disable_raw_mode()?;
+        let id = self.note.key.note_id();
+        self.repository.edit_externally(id)?;
+        self.note = self.repository.note(id)?;
+        executor.execute(EnterAlternateScreen)?;
+        raw_mode_control.enable_raw_mode()?;
         terminal.clear()?;
         Ok(())
     }
@@ -292,6 +300,47 @@ impl Widget for &App {
 }
 
 #[cfg(test)]
+struct NoExecution;
+
+#[cfg(test)]
+impl ExecutableCommand for NoExecution {
+    fn execute(&mut self, _: impl ratatui::crossterm::Command) -> io::Result<&mut Self> {
+        Ok(self)
+    }
+}
+
+trait RawModeControl {
+    fn disable_raw_mode(&mut self) -> io::Result<()>;
+    fn enable_raw_mode(&mut self) -> io::Result<()>;
+}
+
+struct DefaultRawModeControl;
+
+impl RawModeControl for DefaultRawModeControl {
+    fn disable_raw_mode(&mut self) -> io::Result<()> {
+        disable_raw_mode()
+    }
+
+    fn enable_raw_mode(&mut self) -> io::Result<()> {
+        enable_raw_mode()
+    }
+}
+
+#[cfg(test)]
+struct TestRawModeControl;
+
+#[cfg(test)]
+impl RawModeControl for TestRawModeControl {
+    fn disable_raw_mode(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+
+    fn enable_raw_mode(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::repository::MockRepository;
@@ -448,6 +497,26 @@ mod tests {
 
         app.handle_action(Action::EditFile);
         assert_eq!(app.should_edit, true)
+    }
+
+    #[test]
+    fn test_edit_file() -> Result<()> {
+        let mut repository = MockRepository::new();
+        let note = repository.insert_note("Note name.md", "this has not been changed");
+
+        repository.edit_externally_impl = Box::new(|mut note| {
+            note.body = String::from("this has been changed");
+            note
+        });
+
+        let mut terminal = Terminal::new(TestBackend::new(80, 20))?;
+        let mut app = App::new(Box::new(repository), note);
+
+        assert_eq!(app.note.body, "this has not been changed");
+        app.edit_file(&mut terminal, &mut NoExecution, &mut TestRawModeControl)?;
+        assert_eq!(app.note.body, "this has been changed");
+
+        Ok(())
     }
 
     #[test]

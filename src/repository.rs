@@ -145,6 +145,7 @@ impl Repository for FolderRepository {
 pub struct MockRepository {
     notes: HashMap<String, NoteSnapshot>,
     id: String,
+    pub edit_externally_impl: Box<dyn FnMut(NoteSnapshot) -> NoteSnapshot>,
 }
 
 #[cfg(test)]
@@ -153,6 +154,7 @@ impl MockRepository {
         MockRepository {
             notes: HashMap::new(),
             id: Uuid::new_v4().to_string(),
+            edit_externally_impl: Box::new(|note| note),
         }
     }
     pub fn insert_note(&mut self, id: &str, content: &str) -> NoteSnapshot {
@@ -195,8 +197,11 @@ impl Repository for MockRepository {
         &self.id
     }
 
-    fn edit_externally(&mut self, _: &str) -> io::Result<()> {
-        todo!()
+    fn edit_externally(&mut self, id: &str) -> io::Result<()> {
+        let note = self.note(id)?;
+        let new_note = (self.edit_externally_impl)(note.to_owned());
+        self.notes.insert(note.key.note_id().to_owned(), new_note);
+        Ok(())
     }
 }
 
