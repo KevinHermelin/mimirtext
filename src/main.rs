@@ -276,25 +276,24 @@ impl Widget for &App {
         }
 
         if let Some(error) = self.error_message.to_owned() {
-            let text = error.reset();
-            let helper_text = "Press any key to dismiss".dim();
-            let min_width = max(text.width(), helper_text.width()) as u16;
+            let block = Block::bordered().title("Error").border_set(border::ROUNDED);
+
+            let mut text: Vec<Line> = error.lines().map(Line::from).collect();
+            text.push(Line::from(""));
+            text.push(Line::from("Press any key to dismiss".dim()));
+
+            let paragraph = Paragraph::new(text).block(block);
+            let min_width = paragraph.line_width() as u16;
+            let min_height = paragraph.line_count(min_width) as u16;
 
             let area = center(
                 area,
-                Constraint::Length(min_width + 6),
-                Constraint::Length(5),
+                Constraint::Length(min_width + 4),
+                Constraint::Length(min_height),
             );
             Clear.render(area, buf);
-            let block = Block::bordered().title("Error").border_set(border::ROUNDED);
 
-            Paragraph::new(vec![
-                Line::from(text),
-                Line::from(""),
-                Line::from(helper_text),
-            ])
-            .block(block)
-            .render(area, buf);
+            paragraph.render(area, buf);
         }
     }
 }
