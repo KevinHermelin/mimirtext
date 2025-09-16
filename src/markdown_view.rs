@@ -1,4 +1,4 @@
-use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{Event, LinkType, Options, Parser, Tag, TagEnd};
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -8,9 +8,15 @@ use ratatui::{
 };
 
 #[derive(Debug, PartialEq, Clone)]
+pub enum LinkTarget {
+    Note(String),
+    External(String),
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub struct LinkRef {
     index: usize,
-    pub target: String,
+    pub target: LinkTarget,
 }
 
 pub struct MarkdownDocument {
@@ -160,7 +166,16 @@ impl MarkdownDocument {
     pub fn get_links(&self) -> Vec<LinkRef> {
         self.get_parser()
             .filter_map(|event| match event {
-                Event::Start(Tag::Link { dest_url, .. }) => Some(dest_url.to_string()),
+                Event::Start(Tag::Link {
+                    link_type,
+                    dest_url,
+                    ..
+                }) => Some((link_type, dest_url.to_string())),
+                _ => None,
+            })
+            .filter_map(|(link_type, dest_url)| match link_type {
+                LinkType::WikiLink { .. } => Some(LinkTarget::Note(dest_url)),
+                LinkType::Inline { .. } => Some(LinkTarget::External(dest_url)),
                 _ => None,
             })
             .enumerate()
@@ -254,15 +269,15 @@ This should not be visible.
             vec![
                 LinkRef {
                     index: 0,
-                    target: String::from("This page")
+                    target: LinkTarget::Note(String::from("This page"))
                 },
                 LinkRef {
                     index: 1,
-                    target: String::from("Link")
+                    target: LinkTarget::Note(String::from("Link"))
                 },
                 LinkRef {
                     index: 2,
-                    target: String::from("url.com")
+                    target: LinkTarget::External(String::from("url.com"))
                 },
             ]
         );

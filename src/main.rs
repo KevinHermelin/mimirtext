@@ -25,7 +25,7 @@ use std::{
 };
 
 use crate::{
-    markdown_view::{MarkdownDocument, MarkdownView},
+    markdown_view::{LinkTarget, MarkdownDocument, MarkdownView},
     repository::{FolderRepository, NoteSnapshot, Repository},
 };
 
@@ -193,15 +193,23 @@ impl App {
         self.link_selection_index = (self.link_selection_index + offset).rem_euclid(link_count);
     }
     fn follow_link(&mut self) {
-        match self.get_document().selected_link {
-            None => return,
-            Some(link_ref) => {
-                let old_id = self.note.key.note_id().to_owned();
-                let new_id = self.repository.resolve_reference(&link_ref.target);
-                let success = self.open_path(&new_id);
+        if let Some(link_ref) = self.get_document().selected_link {
+            match link_ref.target {
+                LinkTarget::Note(target) => {
+                    let old_id = self.note.key.note_id().to_owned();
+                    let new_id = self.repository.resolve_reference(&target);
+                    let success = self.open_path(&new_id);
 
-                if success {
-                    self.navigation_history.push(old_id);
+                    if success {
+                        self.navigation_history.push(old_id);
+                    }
+                }
+                LinkTarget::External(target) => {
+                    let result = open::that(&target);
+                    if let Err(error) = result {
+                        self.error_message =
+                            Some(format!("Could not open link\n{}\nGot: {}", target, error));
+                    }
                 }
             }
         }
@@ -209,10 +217,10 @@ impl App {
     fn open_path(&mut self, id: &str) -> bool {
         let new_note = self.repository.note(id);
         match new_note {
-            Err(_) => {
+            Err(error) => {
                 self.error_message = Some(format!(
-                    "Could not open \"{:?}\" in current repository.",
-                    id
+                    "Could not open \"{}\" in current repository\nGot: {}",
+                    id, error
                 ));
                 false
             }
