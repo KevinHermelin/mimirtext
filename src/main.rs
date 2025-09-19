@@ -1,4 +1,5 @@
 mod markdown_view;
+mod model;
 mod repository;
 
 use clap::{Parser, command};
@@ -26,6 +27,7 @@ use std::{
 
 use crate::{
     markdown_view::{LinkTarget, MarkdownDocument, MarkdownView},
+    model::{Message, Model, RunningState},
     repository::{FolderRepository, NoteSnapshot, Repository},
 };
 
@@ -49,11 +51,11 @@ fn main() -> Result<()> {
 }
 
 pub struct App {
+    model: Model,
     repository: Box<dyn Repository>,
     note: NoteSnapshot,
     scroll_lines: i16,
     link_selection_index: isize,
-    should_exit: bool,
     should_edit: bool,
     error_message: Option<String>,
     navigation_history: Vec<String>,
@@ -75,11 +77,11 @@ enum Action {
 impl App {
     fn new(repository: Box<dyn Repository>, note: NoteSnapshot) -> Self {
         return App {
+            model: Model::default(),
             repository,
             note,
             scroll_lines: 0,
             link_selection_index: 0,
-            should_exit: false,
             should_edit: false,
             error_message: None,
             navigation_history: vec![],
@@ -103,7 +105,7 @@ impl App {
         document
     }
     fn run(&mut self, terminal: &mut Terminal<impl Backend>) -> Result<()> {
-        while !self.should_exit {
+        while self.model.running_state != RunningState::Done {
             terminal.draw(|frame| self.draw(frame))?;
             self.handle_event()?;
 
@@ -163,7 +165,7 @@ impl App {
         match action {
             Action::ScrollDown => self.move_scroll(1),
             Action::ScrollUp => self.move_scroll(-1),
-            Action::Exit => self.should_exit = true,
+            Action::Exit => self.model = self.model.update(Message::Quit).0,
             Action::NextLink => self.move_link_selection(1),
             Action::PreviousLink => self.move_link_selection(-1),
             Action::FollowLink => self.follow_link(),
@@ -432,8 +434,9 @@ mod tests {
         let note = repository.insert_note("Note name.md", "this is a test file");
         let mut app = App::new(Box::new(repository), note);
 
+        assert_eq!(app.model.running_state, RunningState::Running);
         app.handle_action(Action::Exit);
-        assert_eq!(app.should_exit, true);
+        assert_eq!(app.model.running_state, RunningState::Done);
     }
 
     #[test]
