@@ -27,7 +27,7 @@ use std::{
 
 use crate::{
     markdown_view::{LinkTarget, MarkdownDocument, MarkdownView},
-    model::{Message, Model, RunningState},
+    model::{Message, Model, RunningState, Update},
     repository::{FolderRepository, NoteSnapshot, Repository},
 };
 
