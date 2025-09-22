@@ -1,5 +1,5 @@
 ---
-source: src/model.rs
+source: src/tui/note_pane.rs
 expression: terminal.backend()
 ---
 "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓"

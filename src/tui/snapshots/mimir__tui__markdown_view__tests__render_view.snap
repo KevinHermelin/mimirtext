@@ -1,5 +1,5 @@
 ---
-source: src/markdown_view.rs
+source: src/tui/markdown_view.rs
 expression: terminal.backend()
 ---
 "This is a heading                                                               "

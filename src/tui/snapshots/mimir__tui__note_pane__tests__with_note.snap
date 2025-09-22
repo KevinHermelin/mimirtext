@@ -1,18 +1,18 @@
 ---
-source: src/model.rs
+source: src/tui/note_pane.rs
 expression: terminal.backend()
 ---
-"┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━new note.md━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓"
+"┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━Note name.md━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓"
+"┃                                                                              ┃"
+"┃this is a test file                                                           ┃"
+"┃                                                                              ┃"
+"┃with multiple                                                                 ┃"
+"┃                                                                              ┃"
+"┃paragraphs                                                                    ┃"
 "┃                                                                              ┃"
 "┃                                                                              ┃"
 "┃                                                                              ┃"
 "┃                                                                              ┃"
-"┃                                                                              ┃"
-"┃                                                                              ┃"
-"┃                                                                              ┃"
-"┃                              This note is empty                              ┃"
-"┃                                                                              ┃"
-"┃                          Press <C> to open in editor                         ┃"
 "┃                                                                              ┃"
 "┃                                                                              ┃"
 "┃                                                                              ┃"

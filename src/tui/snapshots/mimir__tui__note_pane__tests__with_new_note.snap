@@ -1,20 +1,20 @@
 ---
-source: src/main.rs
+source: src/tui/note_pane.rs
 expression: terminal.backend()
 ---
-"┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━Note name.md━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓"
-"┃This is a file.                                                               ┃"
+"┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━new note.md━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓"
 "┃                                                                              ┃"
 "┃                                                                              ┃"
 "┃                                                                              ┃"
 "┃                                                                              ┃"
 "┃                                                                              ┃"
 "┃                                                                              ┃"
-"┃                        ╭Error───────────────────────╮                        ┃"
-"┃                        │This is an error            │                        ┃"
-"┃                        │                            │                        ┃"
-"┃                        │Press any key to dismiss    │                        ┃"
-"┃                        ╰────────────────────────────╯                        ┃"
+"┃                                                                              ┃"
+"┃                              This note is empty                              ┃"
+"┃                                                                              ┃"
+"┃                          Press <C> to open in editor                         ┃"
+"┃                                                                              ┃"
+"┃                                                                              ┃"
 "┃                                                                              ┃"
 "┃                                                                              ┃"
 "┃                                                                              ┃"
