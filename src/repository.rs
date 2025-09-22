@@ -9,13 +9,7 @@ use std::{
 use uuid::Uuid;
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct NoteKey(String, String);
-
-impl NoteKey {
-    pub fn note_id(&self) -> &str {
-        &self.1
-    }
-}
+pub struct NoteKey(pub String, pub String);
 
 impl From<(&str, &str)> for NoteKey {
     fn from(value: (&str, &str)) -> Self {
@@ -200,7 +194,7 @@ impl Repository for MockRepository {
     fn edit_externally(&mut self, id: &str) -> io::Result<()> {
         let note = self.note(id)?;
         let new_note = (self.edit_externally_impl)(note.to_owned());
-        self.notes.insert(note.key.note_id().to_owned(), new_note);
+        self.notes.insert(id.to_owned(), new_note);
         Ok(())
     }
 }
@@ -225,14 +219,6 @@ mod tests {
         fs::write(&note_path, content)?;
 
         Ok(note_path)
-    }
-
-    #[test]
-    fn test_note_key_getters() {
-        assert_eq!(
-            NoteKey(String::from("repo_b"), String::from("note_b")).note_id(),
-            "note_b"
-        );
     }
 
     #[test]
