@@ -33,7 +33,7 @@ impl Widget for &NotePaneModel {
             NotePaneState::NoNote => {
                 let area = self.render_block("", area, buf);
 
-                NonIdealState::new("Mimir", "No opened notes").render(area, buf)
+                NonIdealState::new("Mimir", "Press <CTRL+P> to open a note").render(area, buf)
             }
             NotePaneState::LoadingNote(_) => {
                 let area = self.render_block("", area, buf);

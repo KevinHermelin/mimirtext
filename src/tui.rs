@@ -1,15 +1,17 @@
+mod input;
 pub mod markdown_view;
 mod note_pane;
+mod search_window;
 pub mod utils;
 
 use clap::{Parser, command};
 use color_eyre::Result;
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
     Frame, Terminal,
     buffer::Buffer,
     crossterm::{
         ExecutableCommand,
+        event::{self, Event, KeyEvent, KeyEventKind},
         terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
     },
     layout::{Constraint, Rect},
@@ -26,9 +28,9 @@ use std::{
 
 use crate::{
     markdown::LinkTarget,
-    model::{Command, Message, Model, NotePaneMessage, RunningState, Update},
+    model::{Command, Message, Model, NotePaneMessage, RunningState, SearchWindowMessage, Update},
     repository::{FolderRepository, NoteKey, NoteSnapshot, Repository},
-    tui::utils::center,
+    tui::{input::KeyHandler, utils::center},
 };
 
 #[derive(Parser)]
@@ -123,6 +125,15 @@ impl App {
                     let note = self.repository.note(&id)?;
                     message = Message::NotePane(NotePaneMessage::UpdateNote(note));
                 }
+                Command::SearchQuery(query) => {
+                    let results = self.repository.search(&query)?;
+                    message = Message::SearchWindow(SearchWindowMessage::UpdateResults(results));
+                }
+                Command::OpenNote(key) => {
+                    let NoteKey(_, note_id) = key;
+                    let note = self.repository.note(&note_id)?;
+                    message = Message::NotePane(NotePaneMessage::PushNote(note));
+                }
                 Command::None => {}
             }
         }
@@ -142,17 +153,7 @@ impl App {
             return Message::None;
         }
 
-        match key_event.code {
-            KeyCode::Down => Message::NotePane(NotePaneMessage::ScrollDown),
-            KeyCode::Up => Message::NotePane(NotePaneMessage::ScrollUp),
-            KeyCode::Right => Message::NotePane(NotePaneMessage::NextLink),
-            KeyCode::Left => Message::NotePane(NotePaneMessage::PreviousLink),
-            KeyCode::Enter => Message::NotePane(NotePaneMessage::FollowLink),
-            KeyCode::Backspace => Message::NotePane(NotePaneMessage::PopNote),
-            KeyCode::Char('q') => Message::Quit,
-            KeyCode::Char('c') => Message::NotePane(NotePaneMessage::EditExternally),
-            _ => Message::None,
-        }
+        return self.model.handle_key_event(key_event);
     }
     fn draw(&self, frame: &mut Frame) {
         frame.render_widget(Clear, frame.area());
@@ -190,6 +191,12 @@ impl Widget for &App {
 impl Widget for &Model {
     fn render(self, area: Rect, buf: &mut Buffer) {
         self.note_pane.render(area, buf);
+
+        if let Some(search_window) = &self.search_window {
+            let area = center(area, Constraint::Percentage(80), Constraint::Percentage(40));
+            Clear::default().render(area, buf);
+            search_window.render(area, buf);
+        }
     }
 }
 

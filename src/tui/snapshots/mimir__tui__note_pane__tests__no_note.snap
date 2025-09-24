@@ -12,7 +12,7 @@ expression: terminal.backend()
 "┃                                                                              ┃"
 "┃                                     Mimir                                    ┃"
 "┃                                                                              ┃"
-"┃                                No opened notes                               ┃"
+"┃                         Press <CTRL+P> to open a note                        ┃"
 "┃                                                                              ┃"
 "┃                                                                              ┃"
 "┃                                                                              ┃"
