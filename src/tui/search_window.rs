@@ -1,16 +1,16 @@
 use ratatui::{
     buffer::Buffer,
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Constraint, Direction, Layout, Position, Rect},
     style::Stylize,
     symbols::border,
     text::{Line, Span},
     widgets::{Block, Paragraph, Widget},
 };
 
-use crate::{model::SearchWindowModel, repository::NoteKey};
+use crate::{model::SearchWindowModel, repository::NoteKey, tui::WidgetWithCursor};
 
-impl Widget for &SearchWindowModel {
-    fn render(self, area: Rect, buf: &mut Buffer) {
+impl WidgetWithCursor for SearchWindowModel {
+    fn render_with_cursor(&self, area: Rect, buf: &mut Buffer) -> Option<Position> {
         let block = Block::bordered()
             .title("Search")
             .border_set(border::ROUNDED);
@@ -29,6 +29,10 @@ impl Widget for &SearchWindowModel {
             Line::from(self.input.text())
         };
         search_line.render(layout[0], buf);
+        let cursor = Some(Position::new(
+            layout[0].x + self.input.cursor_pos() as u16,
+            layout[0].y,
+        ));
 
         let mut lines = vec![];
         for (index, result) in self.results.iter().cloned().enumerate() {
@@ -48,6 +52,7 @@ impl Widget for &SearchWindowModel {
         }
 
         Paragraph::new(lines).render(layout[1], buf);
+        cursor
     }
 }
 
@@ -60,6 +65,7 @@ mod tests {
         model::SearchWindowModel,
         repository::{MockRepository, Repository, SearchResult},
         text_input::TextInput,
+        tui::WidgetWithCursor,
     };
 
     #[test]
@@ -68,7 +74,9 @@ mod tests {
 
         let mut terminal = Terminal::new(TestBackend::new(20, 10)).unwrap();
         terminal
-            .draw(|frame| frame.render_widget(&model, frame.area()))
+            .draw(|frame| {
+                model.render_with_cursor(frame.area(), frame.buffer_mut());
+            })
             .unwrap();
         assert_snapshot!(terminal.backend());
     }
@@ -90,7 +98,9 @@ mod tests {
 
         let mut terminal = Terminal::new(TestBackend::new(20, 10)).unwrap();
         terminal
-            .draw(|frame| frame.render_widget(&model, frame.area()))
+            .draw(|frame| {
+                model.render_with_cursor(frame.area(), frame.buffer_mut());
+            })
             .unwrap();
         assert_snapshot!(terminal.backend());
     }

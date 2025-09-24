@@ -14,7 +14,7 @@ use ratatui::{
         event::{self, Event, KeyEvent, KeyEventKind},
         terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
     },
-    layout::{Constraint, Rect},
+    layout::{Constraint, Position, Rect},
     prelude::Backend,
     style::Stylize,
     symbols::border,
@@ -56,6 +56,10 @@ pub struct App {
     model: Model,
     repository: Box<dyn Repository>,
     error_message: Option<String>,
+}
+
+pub trait WidgetWithCursor {
+    fn render_with_cursor(&self, area: Rect, buf: &mut Buffer) -> Option<Position>;
 }
 
 impl App {
@@ -157,13 +161,17 @@ impl App {
     }
     fn draw(&self, frame: &mut Frame) {
         frame.render_widget(Clear, frame.area());
-        frame.render_widget(self, frame.area());
+        let cursor = self.render_with_cursor(frame.area(), frame.buffer_mut());
+
+        if let Some(position) = cursor {
+            frame.set_cursor_position(position);
+        }
     }
 }
 
-impl Widget for &App {
-    fn render(self, area: Rect, buf: &mut Buffer) {
-        self.model.render(area, buf);
+impl WidgetWithCursor for App {
+    fn render_with_cursor(&self, area: Rect, buf: &mut Buffer) -> Option<Position> {
+        let cursor = self.model.render_with_cursor(area, buf);
 
         if let Some(error) = self.error_message.to_owned() {
             let block = Block::bordered().title("Error").border_set(border::ROUNDED);
@@ -185,18 +193,20 @@ impl Widget for &App {
 
             paragraph.render(area, buf);
         }
+        cursor
     }
 }
 
-impl Widget for &Model {
-    fn render(self, area: Rect, buf: &mut Buffer) {
+impl WidgetWithCursor for Model {
+    fn render_with_cursor(&self, area: Rect, buf: &mut Buffer) -> Option<Position> {
         self.note_pane.render(area, buf);
 
         if let Some(search_window) = &self.search_window {
             let area = center(area, Constraint::Percentage(80), Constraint::Percentage(40));
             Clear::default().render(area, buf);
-            search_window.render(area, buf);
+            return search_window.render_with_cursor(area, buf);
         }
+        None
     }
 }
 
@@ -217,7 +227,9 @@ mod tests {
 
         let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
         terminal
-            .draw(|frame| frame.render_widget(&app, frame.area()))
+            .draw(|frame| {
+                app.render_with_cursor(frame.area(), frame.buffer_mut());
+            })
             .unwrap();
         assert_snapshot!(terminal.backend());
     }
