@@ -627,6 +627,7 @@ dependencies = [
  "rapidfuzz",
  "ratatui",
  "tempfile",
+ "unicode-segmentation",
  "uuid",
 ]
 
