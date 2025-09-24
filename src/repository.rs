@@ -1,3 +1,4 @@
+use rapidfuzz::distance::jaro_winkler;
 #[cfg(test)]
 use std::collections::HashMap;
 use std::{
@@ -45,10 +46,46 @@ impl NoteSnapshot {
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct SearchResult {
+    pub key: NoteKey,
+    distance: f64,
+}
+
+impl SearchResult {
+    pub fn new(key: NoteKey, distance: f64) -> Self {
+        SearchResult { key, distance }
+    }
+}
+
 pub trait Repository {
     fn id(&self) -> &str;
     fn resolve_reference(&self, reference: &str) -> String;
     fn note(&self, id: &str) -> io::Result<NoteSnapshot>;
+    fn note_key(&self, note_id: &str) -> NoteKey {
+        NoteKey(self.id().to_owned(), note_id.to_owned())
+    }
+    fn notes(&self) -> io::Result<Vec<NoteKey>>;
+    fn search(&self, query: &str) -> io::Result<Vec<SearchResult>> {
+        let notes = self.notes()?;
+
+        let scorer = jaro_winkler::BatchComparator::new(query.to_lowercase().chars());
+
+        let mut notes: Vec<SearchResult> = notes
+            .iter()
+            .map(|key| {
+                SearchResult::new(key.clone(), scorer.distance(key.1.to_lowercase().chars()))
+            })
+            .collect();
+
+        if query.is_empty() {
+            notes.sort_by_key(|result| result.key.1.clone());
+        } else {
+            notes.sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap());
+        }
+
+        Ok(notes)
+    }
     fn edit_externally(&mut self, id: &str) -> io::Result<()>;
 }
 
@@ -110,7 +147,7 @@ impl Repository for FolderRepository {
         let full_path = self.get_note_path(note_id);
         let name = name_from_path(&full_path)?;
 
-        let key = NoteKey(self.id().to_owned(), name.to_owned());
+        let key = self.note_key(note_id);
         let title = name.to_owned();
 
         if !fs::exists(&full_path)? {
@@ -133,6 +170,24 @@ impl Repository for FolderRepository {
     fn edit_externally(&mut self, id: &str) -> io::Result<()> {
         edit::edit_file(self.get_note_path(id))
     }
+
+    fn notes(&self) -> io::Result<Vec<NoteKey>> {
+        let root = &self.root.to_owned();
+
+        // There are multiple reasons why a note can not be read.
+        // This implementation will simply filter out all such notes.
+        // One can argue that it will not matter as long as this function
+        // is only used for searching.
+
+        Ok(fs::read_dir(root)?
+            .filter_map(|res| res.ok())
+            .filter_map(|entry| {
+                let path = entry.path();
+                let rel = path.strip_prefix(root).ok()?;
+                rel.to_str().map(|id| self.note_key(id))
+            })
+            .collect())
+    }
 }
 
 #[cfg(test)]
@@ -153,10 +208,9 @@ impl MockRepository {
     }
     pub fn insert_note(&mut self, id: &str, content: &str) -> NoteSnapshot {
         let title = id.to_owned();
-        let id = id.to_owned();
         let body = content.to_owned();
 
-        let key = NoteKey(self.id().to_owned(), id.clone());
+        let key = self.note_key(&id);
 
         let note = NoteSnapshot {
             key,
@@ -165,7 +219,7 @@ impl MockRepository {
             state: NoteState::Exists,
         };
 
-        self.notes.insert(id, note.clone());
+        self.notes.insert(id.to_owned(), note.clone());
 
         note
     }
@@ -196,6 +250,15 @@ impl Repository for MockRepository {
         let new_note = (self.edit_externally_impl)(note.to_owned());
         self.notes.insert(id.to_owned(), new_note);
         Ok(())
+    }
+
+    fn notes(&self) -> io::Result<Vec<NoteKey>> {
+        Ok(self
+            .notes
+            .keys()
+            .cloned()
+            .map(|note| self.note_key(&note))
+            .collect())
     }
 }
 
@@ -344,6 +407,62 @@ mod tests {
         assert_eq!(
             repo.resolve_reference("subfolder/another_note"),
             "subfolder/another_note.md"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_folder_repository_search() -> io::Result<()> {
+        let (_tempdir, repo_path) = create_temp_repo_path("repository")?;
+        create_note(&repo_path, "This is a note.md", "")?;
+        create_note(&repo_path, "This is something else.md", "")?;
+        create_note(&repo_path, "Another thing.md", "")?;
+        create_note(&repo_path, "This is note.md", "")?;
+
+        let repo = FolderRepository::new(&repo_path)?;
+
+        let results: Vec<String> = repo
+            .search("This is an note")?
+            .iter()
+            .map(|result| result.key.1.clone())
+            .collect();
+        assert_eq!(
+            results,
+            [
+                String::from("This is a note.md"),
+                String::from("This is note.md"),
+                String::from("This is something else.md"),
+                String::from("Another thing.md"),
+            ]
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_folder_repository_search_empty_query() -> io::Result<()> {
+        let (_tempdir, repo_path) = create_temp_repo_path("repository")?;
+        create_note(&repo_path, "ABC.md", "")?;
+        create_note(&repo_path, "DEF.md", "")?;
+        create_note(&repo_path, "GHI.md", "")?;
+        create_note(&repo_path, "JKL.md", "")?;
+
+        let repo = FolderRepository::new(&repo_path)?;
+
+        let results: Vec<String> = repo
+            .search("")?
+            .iter()
+            .map(|result| result.key.1.clone())
+            .collect();
+        assert_eq!(
+            results,
+            [
+                String::from("ABC.md"),
+                String::from("DEF.md"),
+                String::from("GHI.md"),
+                String::from("JKL.md"),
+            ]
         );
 
         Ok(())
