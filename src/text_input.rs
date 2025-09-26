@@ -33,7 +33,8 @@ impl TextInput {
     pub fn text(&self) -> String {
         self.current.clone()
     }
-    pub fn cursor_pos(&self) -> usize {
+    #[cfg(test)]
+    fn cursor_pos(&self) -> usize {
         self.cursor_pos
     }
     pub fn cursor_column(&self) -> usize {
