@@ -1,4 +1,5 @@
 use unicode_segmentation::GraphemeCursor;
+use unicode_width::UnicodeWidthStr;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct TextInput {
@@ -34,6 +35,9 @@ impl TextInput {
     }
     pub fn cursor_pos(&self) -> usize {
         self.cursor_pos
+    }
+    pub fn cursor_column(&self) -> usize {
+        self.current[..self.cursor_pos].width()
     }
     fn move_cursor(&self, movement: Movement) -> Option<usize> {
         let mut cursor = self.cursor();
@@ -94,6 +98,30 @@ mod tests {
     #[test]
     fn test_from_str() {
         assert_eq!(TextInput::from("Test string").text(), "Test string");
+    }
+
+    #[test]
+    fn test_cursor_column() {
+        assert_eq!(TextInput::new().cursor_column(), 0);
+        assert_eq!(
+            TextInput::new()
+                .apply(InputOperation::Insert(String::from("Test")))
+                .cursor_column(),
+            4
+        );
+        assert_eq!(
+            TextInput::new()
+                .apply(InputOperation::Insert(String::from("åäö")))
+                .cursor_column(),
+            3
+        );
+        assert_eq!(
+            TextInput::new()
+                .apply(InputOperation::Insert(String::from("åäö")))
+                .apply(InputOperation::Left)
+                .cursor_column(),
+            2
+        );
     }
 
     #[test]

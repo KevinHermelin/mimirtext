@@ -30,7 +30,7 @@ impl WidgetWithCursor for SearchWindowModel {
         };
         search_line.render(layout[0], buf);
         let cursor = Some(Position::new(
-            layout[0].x + self.input.cursor_pos() as u16,
+            layout[0].x + self.input.cursor_column() as u16,
             layout[0].y,
         ));
 
@@ -59,10 +59,10 @@ impl WidgetWithCursor for SearchWindowModel {
 #[cfg(test)]
 mod tests {
     use insta::assert_snapshot;
-    use ratatui::{Terminal, backend::TestBackend};
+    use ratatui::{Terminal, backend::TestBackend, layout::Position};
 
     use crate::{
-        model::SearchWindowModel,
+        model::{SearchWindowMessage, SearchWindowModel, Update},
         repository::{MockRepository, Repository, SearchResult},
         text_input::TextInput,
         tui::WidgetWithCursor,
@@ -103,5 +103,35 @@ mod tests {
             })
             .unwrap();
         assert_snapshot!(terminal.backend());
+    }
+
+    #[test]
+    fn test_cursor() {
+        let model = SearchWindowModel::default();
+        let mut terminal = Terminal::new(TestBackend::new(20, 10)).unwrap();
+
+        assert_eq!(
+            model.render_with_cursor(terminal.get_frame().area(), terminal.current_buffer_mut()),
+            Some(Position::new(1, 1))
+        );
+
+        let (model, _) = model.update(SearchWindowMessage::Input(
+            crate::text_input::InputOperation::Insert(String::from("Test")),
+        ));
+
+        assert_eq!(
+            model.render_with_cursor(terminal.get_frame().area(), terminal.current_buffer_mut()),
+            Some(Position::new(5, 1))
+        );
+
+        let model = SearchWindowModel::default();
+        let (model, _) = model.update(SearchWindowMessage::Input(
+            crate::text_input::InputOperation::Insert(String::from("åäö")),
+        ));
+
+        assert_eq!(
+            model.render_with_cursor(terminal.get_frame().area(), terminal.current_buffer_mut()),
+            Some(Position::new(4, 1))
+        );
     }
 }
