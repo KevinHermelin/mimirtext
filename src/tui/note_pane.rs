@@ -13,39 +13,45 @@ use crate::{
 };
 
 #[derive(Debug, PartialEq)]
-enum Mode {
+enum ViewMode {
     None,
     Source,
     Browsing,
 }
 
-impl Mode {
+impl ViewMode {
     fn name(&self) -> String {
         match self {
-            Mode::None => String::from("-"),
-            Mode::Source => String::from("source"),
-            Mode::Browsing => String::from("browse"),
+            ViewMode::None => String::from("-"),
+            ViewMode::Source => String::from("source"),
+            ViewMode::Browsing => String::from("browse"),
         }
     }
 
     fn color(&self) -> Color {
         match self {
-            Mode::None => Color::Gray,
-            Mode::Source => Color::Gray,
-            Mode::Browsing => Color::Cyan,
+            ViewMode::None => Color::Gray,
+            ViewMode::Source => Color::Gray,
+            ViewMode::Browsing => Color::Cyan,
         }
     }
 }
 
 impl NotePaneModel {
-    fn render_block(&self, title: Option<&str>, mode: Mode, area: Rect, buf: &mut Buffer) -> Rect {
+    fn render_block(
+        &self,
+        title: Option<&str>,
+        mode: ViewMode,
+        area: Rect,
+        buf: &mut Buffer,
+    ) -> Rect {
         let mut block = Block::bordered().border_set(border::THICK);
 
         if let Some(title) = title {
             block = block.title_bottom(Line::from(format!(" {} ", title)).bold().left_aligned())
         }
 
-        if mode != Mode::None {
+        if mode != ViewMode::None {
             block = block.title_bottom(
                 Line::from(format!(" {} ", mode.name().to_uppercase()))
                     .fg(mode.color())
@@ -64,12 +70,12 @@ impl Widget for &NotePaneModel {
     fn render(self, area: Rect, buf: &mut Buffer) {
         match &self.state {
             NotePaneState::NoNote => {
-                let area = self.render_block(None, Mode::None, area, buf);
+                let area = self.render_block(None, ViewMode::None, area, buf);
 
                 NonIdealState::new("Mimir", "Press <CTRL+P> to open a note").render(area, buf)
             }
             NotePaneState::LoadingNote(_) => {
-                let area = self.render_block(None, Mode::None, area, buf);
+                let area = self.render_block(None, ViewMode::None, area, buf);
 
                 NonIdealState::new("Loading note", "").render(area, buf)
             }
@@ -77,7 +83,7 @@ impl Widget for &NotePaneModel {
                 let document = context.document();
                 if context.note.body.is_empty() {
                     let area =
-                        self.render_block(Some(&context.note.title), Mode::Browsing, area, buf);
+                        self.render_block(Some(&context.note.title), ViewMode::Browsing, area, buf);
                     NonIdealState::new("This note is empty", "Press <C> to open in editor")
                         .render(area, buf);
                     return;
@@ -85,8 +91,12 @@ impl Widget for &NotePaneModel {
 
                 match document {
                     Document::Markdown(mut document) => {
-                        let area =
-                            self.render_block(Some(&context.note.title), Mode::Browsing, area, buf);
+                        let area = self.render_block(
+                            Some(&context.note.title),
+                            ViewMode::Browsing,
+                            area,
+                            buf,
+                        );
 
                         // TODO: There are several problems here. For one, this is untested.
                         // It is also weird that we set the selected_link during render
@@ -99,8 +109,12 @@ impl Widget for &NotePaneModel {
                             .render(area, buf);
                     }
                     Document::Source(source) => {
-                        let area =
-                            self.render_block(Some(&context.note.title), Mode::Source, area, buf);
+                        let area = self.render_block(
+                            Some(&context.note.title),
+                            ViewMode::Source,
+                            area,
+                            buf,
+                        );
 
                         Paragraph::new(source)
                             .scroll((context.scroll_lines as u16, 0))
@@ -126,9 +140,9 @@ mod tests {
 
     #[test]
     fn test_mode() {
-        assert_eq!(Mode::None.name(), String::from("-"));
-        assert_eq!(Mode::Browsing.name(), String::from("browse"));
-        assert_eq!(Mode::Source.name(), String::from("source"));
+        assert_eq!(ViewMode::None.name(), String::from("-"));
+        assert_eq!(ViewMode::Browsing.name(), String::from("browse"));
+        assert_eq!(ViewMode::Source.name(), String::from("source"));
     }
 
     #[test]
