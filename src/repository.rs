@@ -31,10 +31,11 @@ pub struct NoteSnapshot {
     pub title: String,
     pub body: String,
     pub state: NoteState,
+    pub extension: Option<String>,
 }
 
 impl NoteSnapshot {
-    fn new_note(key: &NoteKey) -> Self {
+    fn new_note(key: &NoteKey, extension: Option<&str>) -> Self {
         let NoteKey(_, id) = key;
 
         NoteSnapshot {
@@ -42,6 +43,7 @@ impl NoteSnapshot {
             title: id.to_owned(),
             body: String::new(),
             state: NoteState::New,
+            extension: extension.map(String::from),
         }
     }
 }
@@ -146,12 +148,15 @@ impl Repository for FolderRepository {
     fn note(&self, note_id: &str) -> io::Result<NoteSnapshot> {
         let full_path = self.get_note_path(note_id);
         let name = name_from_path(&full_path)?;
+        let extension = full_path
+            .extension()
+            .and_then(|extension| extension.to_str());
 
         let key = self.note_key(note_id);
         let title = name.to_owned();
 
         if !fs::exists(&full_path)? {
-            return Ok(NoteSnapshot::new_note(&key));
+            return Ok(NoteSnapshot::new_note(&key, extension));
         }
 
         let body = fs::read_to_string(&full_path)?;
@@ -160,6 +165,7 @@ impl Repository for FolderRepository {
             title,
             body,
             state: NoteState::Exists,
+            extension: extension.map(String::from),
         })
     }
 
@@ -209,6 +215,7 @@ impl MockRepository {
     pub fn insert_note(&mut self, id: &str, content: &str) -> NoteSnapshot {
         let title = id.to_owned();
         let body = content.to_owned();
+        let extension = id.split('.').last();
 
         let key = self.note_key(&id);
 
@@ -217,6 +224,7 @@ impl MockRepository {
             title,
             body,
             state: NoteState::Exists,
+            extension: extension.map(String::from),
         };
 
         self.notes.insert(id.to_owned(), note.clone());
@@ -233,11 +241,13 @@ impl Repository for MockRepository {
 
     fn note(&self, id: &str) -> io::Result<NoteSnapshot> {
         let note_key = NoteKey(self.id().to_owned(), id.to_owned());
+        let extension = id.split('.').last();
+
         let note = self
             .notes
             .get(id)
             .cloned()
-            .unwrap_or(NoteSnapshot::new_note(&note_key));
+            .unwrap_or(NoteSnapshot::new_note(&note_key, extension));
         Ok(note)
     }
 
@@ -351,7 +361,8 @@ mod tests {
                 key: NoteKey::from(("repository", "note.md")),
                 title: String::from("note.md"),
                 body: String::from("This is the content"),
-                state: NoteState::Exists
+                state: NoteState::Exists,
+                extension: Some(String::from("md"))
             }
         );
 
@@ -361,7 +372,8 @@ mod tests {
                 key: NoteKey::from(("repository", "new_note.md")),
                 title: String::from("new_note.md"),
                 body: String::new(),
-                state: NoteState::New
+                state: NoteState::New,
+                extension: Some(String::from("md"))
             }
         );
 

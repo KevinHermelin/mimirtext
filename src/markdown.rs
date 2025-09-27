@@ -12,6 +12,7 @@ pub struct LinkRef {
     pub target: LinkTarget,
 }
 
+#[derive(Debug, PartialEq)]
 pub struct MarkdownDocument {
     content: String,
     pub selected_link: Option<LinkRef>,

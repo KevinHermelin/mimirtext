@@ -4,11 +4,11 @@ use ratatui::{
     style::Stylize,
     symbols::border,
     text::Line,
-    widgets::{Block, Widget},
+    widgets::{Block, Paragraph, Widget, Wrap},
 };
 
 use crate::{
-    model::{NotePaneModel, NotePaneState},
+    model::{Document, NotePaneModel, NotePaneState},
     tui::{markdown_view::MarkdownView, utils::NonIdealState},
 };
 
@@ -43,19 +43,31 @@ impl Widget for &NotePaneModel {
             NotePaneState::WithNote(context) => {
                 let area = self.render_block(&context.note.title, area, buf);
 
-                let mut document = context.document();
-                // TODO: There are several problems here. For one, this is untested.
-                // It is also weird that we set the selected_link during render
-                // and from the names alone we are not giving any clues that context.selected_link
-                // does not retrieve that information from the document.
-                document.selected_link = context.selected_link();
-
-                MarkdownView::new(document)
-                    .scroll(context.scroll_lines as i16)
-                    .render(area, buf);
+                let document = context.document();
                 if context.note.body.is_empty() {
                     NonIdealState::new("This note is empty", "Press <C> to open in editor")
                         .render(area, buf);
+                    return;
+                }
+
+                match document {
+                    Document::Markdown(mut document) => {
+                        // TODO: There are several problems here. For one, this is untested.
+                        // It is also weird that we set the selected_link during render
+                        // and from the names alone we are not giving any clues that context.selected_link
+                        // does not retrieve that information from the document.
+                        document.selected_link = context.selected_link();
+
+                        MarkdownView::new(document)
+                            .scroll(context.scroll_lines as i16)
+                            .render(area, buf);
+                    }
+                    Document::Source(source) => {
+                        Paragraph::new(source)
+                            .scroll((context.scroll_lines as u16, 0))
+                            .wrap(Wrap { trim: false })
+                            .render(area, buf);
+                    }
                 }
             }
         };
@@ -98,6 +110,23 @@ mod tests {
             scroll_lines: 1,
             link_selection_index: 0,
         });
+
+        let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
+        terminal
+            .draw(|frame| frame.render_widget(&model, frame.area()))
+            .unwrap();
+        assert_snapshot!(terminal.backend());
+    }
+
+    #[test]
+    fn test_with_raw_note() {
+        let note = MockRepository::new().insert_note(
+            "Note without extension",
+            "# This is not a markdown document and should not be rendered as such. \n- This should not be rendered as a list\n- And [[this is|not a link]]",
+        );
+
+        let model = NotePaneModel::default();
+        let (model, _) = model.update(NotePaneMessage::PushNote(note));
 
         let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
         terminal

@@ -161,9 +161,19 @@ pub struct NoteContext {
     pub link_selection_index: isize,
 }
 
+#[derive(Debug, PartialEq)]
+pub enum Document {
+    Markdown(MarkdownDocument),
+    Source(String),
+}
+
 impl NoteContext {
-    pub fn document(&self) -> MarkdownDocument {
-        MarkdownDocument::new(&self.note.body)
+    pub fn document(&self) -> Document {
+        if self.note.extension == Some(String::from("md")) {
+            Document::Markdown(MarkdownDocument::new(&self.note.body))
+        } else {
+            Document::Source(self.note.body.clone())
+        }
     }
 
     fn max_scroll(&self) -> isize {
@@ -171,14 +181,24 @@ impl NoteContext {
     }
 
     fn max_link_selection(&self) -> isize {
-        self.document().get_links().iter().count().saturating_sub(1) as isize
+        match self.document() {
+            Document::Markdown(markdown_document) => markdown_document
+                .get_links()
+                .iter()
+                .count()
+                .saturating_sub(1) as isize,
+            Document::Source(_) => 0,
+        }
     }
 
     pub fn selected_link(&self) -> Option<LinkRef> {
-        self.document()
-            .get_links()
-            .get(self.link_selection_index as usize)
-            .cloned()
+        match self.document() {
+            Document::Markdown(markdown_document) => markdown_document
+                .get_links()
+                .get(self.link_selection_index as usize)
+                .cloned(),
+            Document::Source(_) => None,
+        }
     }
 }
 
@@ -480,6 +500,30 @@ mod tests {
                     scroll_lines: 0,
                     link_selection_index: 0
                 })
+            );
+        }
+
+        #[test]
+        fn test_document() {
+            let context = NoteContext {
+                note: MockRepository::new().insert_note("note.md", "This is a note"),
+                scroll_lines: 0,
+                link_selection_index: 0,
+            };
+            assert_eq!(
+                context.document(),
+                Document::Markdown(MarkdownDocument::new("This is a note"))
+            );
+
+            let context = NoteContext {
+                note: MockRepository::new()
+                    .insert_note("note without extension", "This is also a note"),
+                scroll_lines: 0,
+                link_selection_index: 0,
+            };
+            assert_eq!(
+                context.document(),
+                Document::Source(String::from("This is also a note"))
             );
         }
 
