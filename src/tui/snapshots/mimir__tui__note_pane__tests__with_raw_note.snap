@@ -2,7 +2,7 @@
 source: src/tui/note_pane.rs
 expression: terminal.backend()
 ---
-"┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━Note without extension━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓"
+"┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓"
 "┃# This is not a markdown document and should not be rendered as such.         ┃"
 "┃- This should not be rendered as a list                                       ┃"
 "┃- And [[this is|not a link]]                                                  ┃"
@@ -21,4 +21,4 @@ expression: terminal.backend()
 "┃                                                                              ┃"
 "┃                                                                              ┃"
 "┃                                                                              ┃"
-"┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ Exit <Q> ┛"
+"┗ Note without extension ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ SOURCE ┛"

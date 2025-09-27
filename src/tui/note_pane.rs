@@ -1,7 +1,7 @@
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
-    style::Stylize,
+    style::{Color, Stylize},
     symbols::border,
     text::Line,
     widgets::{Block, Paragraph, Widget, Wrap},
@@ -12,14 +12,47 @@ use crate::{
     tui::{markdown_view::MarkdownView, utils::NonIdealState},
 };
 
+#[derive(Debug, PartialEq)]
+enum Mode {
+    None,
+    Source,
+    Browsing,
+}
+
+impl Mode {
+    fn name(&self) -> String {
+        match self {
+            Mode::None => String::from("-"),
+            Mode::Source => String::from("source"),
+            Mode::Browsing => String::from("browse"),
+        }
+    }
+
+    fn color(&self) -> Color {
+        match self {
+            Mode::None => Color::Gray,
+            Mode::Source => Color::Gray,
+            Mode::Browsing => Color::Cyan,
+        }
+    }
+}
+
 impl NotePaneModel {
-    fn render_block(&self, title: &str, area: Rect, buf: &mut Buffer) -> Rect {
-        let title = Line::from(title.to_string().bold());
-        let instructions = Line::from(vec![" Exit ".into(), "<Q> ".blue().bold()]);
-        let block = Block::bordered()
-            .title(title.centered())
-            .title_bottom(instructions.right_aligned())
-            .border_set(border::THICK);
+    fn render_block(&self, title: Option<&str>, mode: Mode, area: Rect, buf: &mut Buffer) -> Rect {
+        let mut block = Block::bordered().border_set(border::THICK);
+
+        if let Some(title) = title {
+            block = block.title_bottom(Line::from(format!(" {} ", title)).bold().left_aligned())
+        }
+
+        if mode != Mode::None {
+            block = block.title_bottom(
+                Line::from(format!(" {} ", mode.name().to_uppercase()))
+                    .fg(mode.color())
+                    .right_aligned(),
+            )
+        }
+
         let inner_area = block.inner(area);
         block.render(area, buf);
 
@@ -31,20 +64,20 @@ impl Widget for &NotePaneModel {
     fn render(self, area: Rect, buf: &mut Buffer) {
         match &self.state {
             NotePaneState::NoNote => {
-                let area = self.render_block("", area, buf);
+                let area = self.render_block(None, Mode::None, area, buf);
 
                 NonIdealState::new("Mimir", "Press <CTRL+P> to open a note").render(area, buf)
             }
             NotePaneState::LoadingNote(_) => {
-                let area = self.render_block("", area, buf);
+                let area = self.render_block(None, Mode::None, area, buf);
 
                 NonIdealState::new("Loading note", "").render(area, buf)
             }
             NotePaneState::WithNote(context) => {
-                let area = self.render_block(&context.note.title, area, buf);
-
                 let document = context.document();
                 if context.note.body.is_empty() {
+                    let area =
+                        self.render_block(Some(&context.note.title), Mode::Browsing, area, buf);
                     NonIdealState::new("This note is empty", "Press <C> to open in editor")
                         .render(area, buf);
                     return;
@@ -52,6 +85,9 @@ impl Widget for &NotePaneModel {
 
                 match document {
                     Document::Markdown(mut document) => {
+                        let area =
+                            self.render_block(Some(&context.note.title), Mode::Browsing, area, buf);
+
                         // TODO: There are several problems here. For one, this is untested.
                         // It is also weird that we set the selected_link during render
                         // and from the names alone we are not giving any clues that context.selected_link
@@ -63,6 +99,9 @@ impl Widget for &NotePaneModel {
                             .render(area, buf);
                     }
                     Document::Source(source) => {
+                        let area =
+                            self.render_block(Some(&context.note.title), Mode::Source, area, buf);
+
                         Paragraph::new(source)
                             .scroll((context.scroll_lines as u16, 0))
                             .wrap(Wrap { trim: false })
@@ -84,6 +123,13 @@ mod tests {
     use insta::assert_snapshot;
     use ratatui::{Terminal, backend::TestBackend};
     use std::io::Result;
+
+    #[test]
+    fn test_mode() {
+        assert_eq!(Mode::None.name(), String::from("-"));
+        assert_eq!(Mode::Browsing.name(), String::from("browse"));
+        assert_eq!(Mode::Source.name(), String::from("source"));
+    }
 
     #[test]
     fn test_no_note() {
