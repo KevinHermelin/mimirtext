@@ -8,7 +8,7 @@ use ratatui::{
 };
 
 use crate::{
-    model::{Document, NotePaneModel, NotePaneState, ViewMode},
+    model::{Document, EditState, NotePaneModel, NotePaneState, ViewMode},
     tui::{markdown_view::MarkdownView, utils::NonIdealState},
 };
 
@@ -72,6 +72,15 @@ impl Widget for &NotePaneModel {
             }
             NotePaneState::WithNote(context) => {
                 let document = context.document();
+
+                if let EditState::Active(editor) = &context.editor {
+                    let document = editor.text();
+                    Paragraph::new(document)
+                        .wrap(Wrap { trim: false })
+                        .render(area, buf);
+                    return;
+                }
+
                 if context.note.body.is_empty() {
                     NonIdealState::new("This note is empty", "Press <C> to open in editor")
                         .render(area, buf);

@@ -2,9 +2,10 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::{
     model::{
-        Message, Model, NotePaneMessage, NotePaneModel, SearchWindowMessage, SearchWindowModel,
+        EditState, Message, Model, NotePaneMessage, NotePaneModel, NotePaneState,
+        SearchWindowMessage, SearchWindowModel,
     },
-    text_input::InputOperation,
+    text_input::{InputOperation, TextInput},
 };
 
 pub trait KeyHandler<Message> {
@@ -36,6 +37,18 @@ impl KeyHandler<Message> for Model {
 
 impl KeyHandler<NotePaneMessage> for NotePaneModel {
     fn handle_key_event(&self, key_event: KeyEvent) -> NotePaneMessage {
+        // Common for all modes.
+        match (key_event.code, key_event.modifiers) {
+            (KeyCode::Esc, _) => return NotePaneMessage::StopEdit,
+            _ => {}
+        };
+
+        if let NotePaneState::WithNote(context) = &self.state {
+            if let EditState::Active(editor) = &context.editor {
+                return NotePaneMessage::Input(editor.handle_key_event(key_event));
+            }
+        }
+
         match (key_event.code, key_event.modifiers) {
             (KeyCode::Down, _) => NotePaneMessage::ScrollDown,
             (KeyCode::Up, _) => NotePaneMessage::ScrollUp,
@@ -43,7 +56,6 @@ impl KeyHandler<NotePaneMessage> for NotePaneModel {
             (KeyCode::Left, _) => NotePaneMessage::PreviousLink,
             (KeyCode::Enter, _) => NotePaneMessage::FollowLink,
             (KeyCode::Backspace, _) => NotePaneMessage::PopNote,
-            (KeyCode::Esc, _) => NotePaneMessage::StopEdit,
             (KeyCode::Char('c'), KeyModifiers::NONE) => NotePaneMessage::StartEdit,
             (KeyCode::Char('C'), KeyModifiers::SHIFT) => NotePaneMessage::EditExternally,
             _ => NotePaneMessage::None,
@@ -54,16 +66,22 @@ impl KeyHandler<NotePaneMessage> for NotePaneModel {
 impl KeyHandler<SearchWindowMessage> for SearchWindowModel {
     fn handle_key_event(&self, key_event: KeyEvent) -> SearchWindowMessage {
         match (key_event.code, key_event.modifiers) {
-            (KeyCode::Backspace, _) => SearchWindowMessage::Input(InputOperation::Backspace),
             (KeyCode::Enter, _) => SearchWindowMessage::OpenResult,
-            (KeyCode::Left, _) => SearchWindowMessage::Input(InputOperation::Left),
-            (KeyCode::Right, _) => SearchWindowMessage::Input(InputOperation::Right),
             (KeyCode::Down, _) => SearchWindowMessage::NextResult,
             (KeyCode::Up, _) => SearchWindowMessage::PreviousResult,
-            (KeyCode::Char(c), _) => {
-                SearchWindowMessage::Input(InputOperation::Insert(c.to_string()))
-            }
-            _ => SearchWindowMessage::None,
+            _ => SearchWindowMessage::Input(self.input.handle_key_event(key_event)),
+        }
+    }
+}
+
+impl KeyHandler<InputOperation> for TextInput {
+    fn handle_key_event(&self, key_event: KeyEvent) -> InputOperation {
+        match (key_event.code, key_event.modifiers) {
+            (KeyCode::Backspace, _) => InputOperation::Backspace,
+            (KeyCode::Left, _) => InputOperation::Left,
+            (KeyCode::Right, _) => InputOperation::Right,
+            (KeyCode::Char(c), _) => InputOperation::Insert(c.to_string()),
+            _ => InputOperation::None,
         }
     }
 }

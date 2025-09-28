@@ -112,7 +112,6 @@ pub enum SearchWindowMessage {
     NextResult,
     PreviousResult,
     OpenResult,
-    None,
 }
 
 impl Update<SearchWindowMessage> for SearchWindowModel {
@@ -155,11 +154,17 @@ impl Update<SearchWindowMessage> for SearchWindowModel {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub enum EditState {
+    None,
+    Active(TextInput),
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct NoteContext {
     pub note: NoteSnapshot,
     pub scroll_lines: isize,
     pub link_selection_index: isize,
-    pub edit_mode: bool,
+    pub editor: EditState,
 }
 
 #[derive(Debug, PartialEq)]
@@ -174,7 +179,7 @@ impl NoteContext {
             note,
             scroll_lines: 0,
             link_selection_index: 0,
-            edit_mode: false,
+            editor: EditState::None,
         }
     }
 
@@ -237,7 +242,7 @@ pub enum ViewMode {
 impl NotePaneModel {
     pub fn view_mode(&self) -> ViewMode {
         if let Some(context) = self.state.context() {
-            if context.edit_mode {
+            if let EditState::Active(_) = context.editor {
                 return ViewMode::Edit;
             }
 
@@ -320,11 +325,17 @@ impl Update<NotePaneMessage> for NotePaneModel {
             );
 
             if let NotePaneMessage::StartEdit = message {
-                context.edit_mode = true;
+                context.editor = EditState::Active(TextInput::from(context.note.body.as_str()));
             }
 
             if let NotePaneMessage::StopEdit = message {
-                context.edit_mode = false;
+                context.editor = EditState::None;
+            }
+
+            if let NotePaneMessage::Input(operation) = &message {
+                if let EditState::Active(editor) = &context.editor {
+                    context.editor = EditState::Active(editor.clone().apply(operation.clone()));
+                }
             }
 
             if let NotePaneMessage::FollowLink = message {
@@ -356,6 +367,7 @@ pub enum NotePaneMessage {
     EditExternally,
     StartEdit,
     StopEdit,
+    Input(InputOperation),
     None,
 }
 
@@ -522,7 +534,7 @@ mod tests {
                     note,
                     scroll_lines: 0,
                     link_selection_index: 0,
-                    edit_mode: false
+                    editor: EditState::None,
                 }
             );
         }
@@ -709,12 +721,29 @@ mod tests {
 
             let (model, _) = NotePaneModel::default().update(NotePaneMessage::PushNote(note));
             assert_eq!(model.view_mode(), ViewMode::Browsing);
+            assert_eq!(model.state.context().unwrap().editor, EditState::None);
 
             let (model, _) = model.update(NotePaneMessage::StartEdit);
             assert_eq!(model.view_mode(), ViewMode::Edit);
+            assert_eq!(
+                model.state.context().unwrap().editor,
+                EditState::Active(TextInput::new_with("This is a note.", 0))
+            );
+
+            let (model, _) = model.update(NotePaneMessage::Input(InputOperation::Insert(
+                String::from("This is an edit.\n"),
+            )));
+            assert_eq!(
+                model.state.context().unwrap().editor,
+                EditState::Active(TextInput::new_with(
+                    "This is an edit.\nThis is a note.",
+                    "This is an edit.\n".len()
+                ))
+            );
 
             let (model, _) = model.update(NotePaneMessage::StopEdit);
             assert_eq!(model.view_mode(), ViewMode::Browsing);
+            assert_eq!(model.state.context().unwrap().editor, EditState::None);
         }
 
         #[test]

@@ -27,6 +27,13 @@ impl TextInput {
             cursor_pos: 0,
         }
     }
+    #[cfg(test)]
+    pub fn new_with(text: &str, cursor_pos: usize) -> Self {
+        Self {
+            current: text.to_owned(),
+            cursor_pos,
+        }
+    }
     fn cursor(&self) -> GraphemeCursor {
         GraphemeCursor::new(self.cursor_pos, self.current.len(), true)
     }
@@ -74,6 +81,7 @@ impl TextInput {
                     self.cursor_pos = new_pos;
                 }
             }
+            InputOperation::None => {}
         };
         self
     }
@@ -85,6 +93,7 @@ pub enum InputOperation {
     Backspace,
     Left,
     Right,
+    None,
 }
 
 #[cfg(test)]
@@ -122,6 +131,14 @@ mod tests {
                 .apply(InputOperation::Left)
                 .cursor_column(),
             2
+        );
+    }
+
+    #[test]
+    fn test_apply_none() {
+        assert_eq!(
+            TextInput::new(),
+            TextInput::new().apply(InputOperation::None)
         );
     }
 
