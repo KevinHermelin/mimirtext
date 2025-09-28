@@ -207,14 +207,14 @@ impl WidgetWithCursor for App {
 
 impl WidgetWithCursor for Model {
     fn render_with_cursor(&self, area: Rect, buf: &mut Buffer) -> Option<Position> {
-        self.note_pane.render(area, buf);
+        let cursor = self.note_pane.render_with_cursor(area, buf);
 
         if let Some(search_window) = &self.search_window {
             let area = center(area, Constraint::Percentage(80), Constraint::Percentage(40));
             Clear::default().render(area, buf);
             return search_window.render_with_cursor(area, buf);
         }
-        None
+        cursor
     }
 }
 

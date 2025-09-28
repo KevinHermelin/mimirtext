@@ -1,6 +1,6 @@
 use ratatui::{
     buffer::Buffer,
-    layout::Rect,
+    layout::{Position, Rect},
     style::{Color, Stylize},
     symbols::border,
     text::Line,
@@ -9,7 +9,7 @@ use ratatui::{
 
 use crate::{
     model::{Document, EditState, NotePaneModel, NotePaneState, ViewMode},
-    tui::{markdown_view::MarkdownView, utils::NonIdealState},
+    tui::{WidgetWithCursor, markdown_view::MarkdownView, utils::NonIdealState},
 };
 
 impl ViewMode {
@@ -60,8 +60,8 @@ impl NotePaneModel {
     }
 }
 
-impl Widget for &NotePaneModel {
-    fn render(self, area: Rect, buf: &mut Buffer) {
+impl WidgetWithCursor for NotePaneModel {
+    fn render_with_cursor(&self, area: Rect, buf: &mut Buffer) -> Option<Position> {
         let area = self.render_block(area, buf);
         match &self.state {
             NotePaneState::NoNote => {
@@ -78,13 +78,17 @@ impl Widget for &NotePaneModel {
                     Paragraph::new(document)
                         .wrap(Wrap { trim: false })
                         .render(area, buf);
-                    return;
+                    let cursor = Position {
+                        x: area.x + editor.cursor_column() as u16,
+                        y: area.y + editor.cursor_row() as u16,
+                    };
+                    return Some(cursor);
                 }
 
                 if context.note.body.is_empty() {
                     NonIdealState::new("This note is empty", "Press <C> to open in editor")
                         .render(area, buf);
-                    return;
+                    return None;
                 }
 
                 match document {
@@ -108,6 +112,7 @@ impl Widget for &NotePaneModel {
                 }
             }
         };
+        None
     }
 }
 
@@ -136,7 +141,9 @@ mod tests {
 
         let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
         terminal
-            .draw(|frame| frame.render_widget(&model, frame.area()))
+            .draw(|frame| {
+                model.render_with_cursor(frame.area(), frame.buffer_mut());
+            })
             .unwrap();
         assert_snapshot!(terminal.backend());
     }
@@ -153,7 +160,9 @@ mod tests {
 
         let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
         terminal
-            .draw(|frame| frame.render_widget(&model, frame.area()))
+            .draw(|frame| {
+                model.render_with_cursor(frame.area(), frame.buffer_mut());
+            })
             .unwrap();
         assert_snapshot!(terminal.backend());
     }
@@ -167,7 +176,9 @@ mod tests {
 
         let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
         terminal
-            .draw(|frame| frame.render_widget(&model, frame.area()))
+            .draw(|frame| {
+                model.render_with_cursor(frame.area(), frame.buffer_mut());
+            })
             .unwrap();
         assert_snapshot!(terminal.backend());
     }
@@ -184,7 +195,9 @@ mod tests {
 
         let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
         terminal
-            .draw(|frame| frame.render_widget(&model, frame.area()))
+            .draw(|frame| {
+                model.render_with_cursor(frame.area(), frame.buffer_mut());
+            })
             .unwrap();
         assert_snapshot!(terminal.backend());
     }
@@ -198,7 +211,9 @@ mod tests {
 
         let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
         terminal
-            .draw(|frame| frame.render_widget(&model, frame.area()))
+            .draw(|frame| {
+                model.render_with_cursor(frame.area(), frame.buffer_mut());
+            })
             .unwrap();
         assert_snapshot!(terminal.backend());
 

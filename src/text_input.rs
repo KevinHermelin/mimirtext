@@ -44,8 +44,15 @@ impl TextInput {
     fn cursor_pos(&self) -> usize {
         self.cursor_pos
     }
+    pub fn cursor_row(&self) -> usize {
+        self.current[..self.cursor_pos].split('\n').count() - 1
+    }
     pub fn cursor_column(&self) -> usize {
-        self.current[..self.cursor_pos].width()
+        self.current[..self.cursor_pos]
+            .split('\n')
+            .last()
+            .expect("should have at least one line")
+            .width()
     }
     fn move_cursor(&self, movement: Movement) -> Option<usize> {
         let mut cursor = self.cursor();
@@ -131,6 +138,36 @@ mod tests {
                 .apply(InputOperation::Left)
                 .cursor_column(),
             2
+        );
+        assert_eq!(
+            TextInput::new()
+                .apply(InputOperation::Insert(String::from("Test\nNew")))
+                .cursor_column(),
+            3
+        );
+    }
+    #[test]
+    fn test_cursor_row() {
+        assert_eq!(
+            TextInput::new()
+                .apply(InputOperation::Insert(String::from("")))
+                .cursor_row(),
+            0
+        );
+
+        assert_eq!(
+            TextInput::new()
+                .apply(InputOperation::Insert(String::from("Test\n")))
+                .cursor_row(),
+            1
+        );
+
+        assert_eq!(
+            TextInput::new()
+                .apply(InputOperation::Insert(String::from("Test\n")))
+                .apply(InputOperation::Left)
+                .cursor_row(),
+            0
         );
     }
 
