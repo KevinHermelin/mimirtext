@@ -8,16 +8,9 @@ use ratatui::{
 };
 
 use crate::{
-    model::{Document, NotePaneModel, NotePaneState},
+    model::{Document, NotePaneModel, NotePaneState, ViewMode},
     tui::{markdown_view::MarkdownView, utils::NonIdealState},
 };
-
-#[derive(Debug, PartialEq)]
-enum ViewMode {
-    None,
-    Source,
-    Browsing,
-}
 
 impl ViewMode {
     fn name(&self) -> String {
@@ -25,6 +18,7 @@ impl ViewMode {
             ViewMode::None => String::from("-"),
             ViewMode::Source => String::from("source"),
             ViewMode::Browsing => String::from("browse"),
+            ViewMode::Edit => String::from("edit"),
         }
     }
 
@@ -33,24 +27,24 @@ impl ViewMode {
             ViewMode::None => Color::Gray,
             ViewMode::Source => Color::Gray,
             ViewMode::Browsing => Color::Cyan,
+            ViewMode::Edit => Color::Red,
         }
     }
 }
 
 impl NotePaneModel {
-    fn render_block(
-        &self,
-        title: Option<&str>,
-        mode: ViewMode,
-        area: Rect,
-        buf: &mut Buffer,
-    ) -> Rect {
+    fn render_block(&self, area: Rect, buf: &mut Buffer) -> Rect {
         let mut block = Block::bordered().border_set(border::THICK);
 
-        if let Some(title) = title {
-            block = block.title_bottom(Line::from(format!(" {} ", title)).bold().left_aligned())
+        if let NotePaneState::WithNote(context) = &self.state {
+            block = block.title_bottom(
+                Line::from(format!(" {} ", context.note.title))
+                    .bold()
+                    .left_aligned(),
+            )
         }
 
+        let mode = self.view_mode();
         if mode != ViewMode::None {
             block = block.title_bottom(
                 Line::from(format!(" {} ", mode.name().to_uppercase()))
@@ -68,22 +62,17 @@ impl NotePaneModel {
 
 impl Widget for &NotePaneModel {
     fn render(self, area: Rect, buf: &mut Buffer) {
+        let area = self.render_block(area, buf);
         match &self.state {
             NotePaneState::NoNote => {
-                let area = self.render_block(None, ViewMode::None, area, buf);
-
                 NonIdealState::new("Mimir", "Press <CTRL+P> to open a note").render(area, buf)
             }
             NotePaneState::LoadingNote(_) => {
-                let area = self.render_block(None, ViewMode::None, area, buf);
-
                 NonIdealState::new("Loading note", "").render(area, buf)
             }
             NotePaneState::WithNote(context) => {
                 let document = context.document();
                 if context.note.body.is_empty() {
-                    let area =
-                        self.render_block(Some(&context.note.title), ViewMode::Browsing, area, buf);
                     NonIdealState::new("This note is empty", "Press <C> to open in editor")
                         .render(area, buf);
                     return;
@@ -91,13 +80,6 @@ impl Widget for &NotePaneModel {
 
                 match document {
                     Document::Markdown(mut document) => {
-                        let area = self.render_block(
-                            Some(&context.note.title),
-                            ViewMode::Browsing,
-                            area,
-                            buf,
-                        );
-
                         // TODO: There are several problems here. For one, this is untested.
                         // It is also weird that we set the selected_link during render
                         // and from the names alone we are not giving any clues that context.selected_link
@@ -109,13 +91,6 @@ impl Widget for &NotePaneModel {
                             .render(area, buf);
                     }
                     Document::Source(source) => {
-                        let area = self.render_block(
-                            Some(&context.note.title),
-                            ViewMode::Source,
-                            area,
-                            buf,
-                        );
-
                         Paragraph::new(source)
                             .scroll((context.scroll_lines as u16, 0))
                             .wrap(Wrap { trim: false })
@@ -131,7 +106,7 @@ impl Widget for &NotePaneModel {
 mod tests {
     use super::*;
     use crate::{
-        model::{NoteContext, NotePaneMessage, Update},
+        model::{NotePaneMessage, Update},
         repository::{MockRepository, Repository},
     };
     use insta::assert_snapshot;
@@ -164,12 +139,22 @@ mod tests {
             "this should not be visible.\n\nthis is a test file\n\nwith multiple\n\nparagraphs",
         );
 
-        let mut model = NotePaneModel::default();
-        model.state = NotePaneState::WithNote(NoteContext {
-            note,
-            scroll_lines: 1,
-            link_selection_index: 0,
-        });
+        let (model, _) = NotePaneModel::default().update(NotePaneMessage::PushNote(note));
+        let (model, _) = model.update(NotePaneMessage::ScrollDown);
+
+        let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
+        terminal
+            .draw(|frame| frame.render_widget(&model, frame.area()))
+            .unwrap();
+        assert_snapshot!(terminal.backend());
+    }
+
+    #[test]
+    fn test_editing_note() {
+        let note = MockRepository::new().insert_note("Note name.md", "We are editing this note");
+
+        let (model, _) = NotePaneModel::default().update(NotePaneMessage::PushNote(note));
+        let (model, _) = model.update(NotePaneMessage::StartEdit);
 
         let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
         terminal

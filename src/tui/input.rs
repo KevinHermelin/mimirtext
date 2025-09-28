@@ -43,7 +43,9 @@ impl KeyHandler<NotePaneMessage> for NotePaneModel {
             (KeyCode::Left, _) => NotePaneMessage::PreviousLink,
             (KeyCode::Enter, _) => NotePaneMessage::FollowLink,
             (KeyCode::Backspace, _) => NotePaneMessage::PopNote,
-            (KeyCode::Char('c'), _) => NotePaneMessage::EditExternally,
+            (KeyCode::Esc, _) => NotePaneMessage::StopEdit,
+            (KeyCode::Char('c'), KeyModifiers::NONE) => NotePaneMessage::StartEdit,
+            (KeyCode::Char('C'), KeyModifiers::SHIFT) => NotePaneMessage::EditExternally,
             _ => NotePaneMessage::None,
         }
     }

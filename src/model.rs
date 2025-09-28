@@ -159,6 +159,7 @@ pub struct NoteContext {
     pub note: NoteSnapshot,
     pub scroll_lines: isize,
     pub link_selection_index: isize,
+    pub edit_mode: bool,
 }
 
 #[derive(Debug, PartialEq)]
@@ -168,6 +169,15 @@ pub enum Document {
 }
 
 impl NoteContext {
+    pub fn new(note: NoteSnapshot) -> Self {
+        Self {
+            note,
+            scroll_lines: 0,
+            link_selection_index: 0,
+            edit_mode: false,
+        }
+    }
+
     pub fn document(&self) -> Document {
         if self.note.extension == Some(String::from("md")) {
             Document::Markdown(MarkdownDocument::new(&self.note.body))
@@ -216,15 +226,34 @@ pub struct NotePaneModel {
     pub history: Vec<NoteKey>,
 }
 
+#[derive(Debug, PartialEq)]
+pub enum ViewMode {
+    None,
+    Source,
+    Browsing,
+    Edit,
+}
+
+impl NotePaneModel {
+    pub fn view_mode(&self) -> ViewMode {
+        if let Some(context) = self.state.context() {
+            if context.edit_mode {
+                return ViewMode::Edit;
+            }
+
+            return match context.document() {
+                Document::Markdown(_) => ViewMode::Browsing,
+                Document::Source(_) => ViewMode::Source,
+            };
+        }
+        ViewMode::None
+    }
+}
+
 impl NotePaneState {
     fn from_note(note: NoteSnapshot) -> Self {
-        Self::WithNote(NoteContext {
-            note,
-            scroll_lines: 0,
-            link_selection_index: 0,
-        })
+        Self::WithNote(NoteContext::new(note))
     }
-    #[cfg(test)]
     fn context(&self) -> Option<NoteContext> {
         if let Self::WithNote(context) = self {
             Some(context.clone())
@@ -290,6 +319,14 @@ impl Update<NotePaneMessage> for NotePaneModel {
                 context.max_link_selection(),
             );
 
+            if let NotePaneMessage::StartEdit = message {
+                context.edit_mode = true;
+            }
+
+            if let NotePaneMessage::StopEdit = message {
+                context.edit_mode = false;
+            }
+
             if let NotePaneMessage::FollowLink = message {
                 command = context
                     .selected_link()
@@ -317,6 +354,8 @@ pub enum NotePaneMessage {
     PreviousLink,
     FollowLink,
     EditExternally,
+    StartEdit,
+    StopEdit,
     None,
 }
 
@@ -474,6 +513,21 @@ mod tests {
         }
 
         #[test]
+        fn test_new_context() {
+            let note = MockRepository::new().insert_note("note", "This is a note");
+
+            assert_eq!(
+                NoteContext::new(note.clone()),
+                NoteContext {
+                    note,
+                    scroll_lines: 0,
+                    link_selection_index: 0,
+                    edit_mode: false
+                }
+            );
+        }
+
+        #[test]
         fn test_open_note() {
             let model = NotePaneModel::default();
 
@@ -481,46 +535,39 @@ mod tests {
 
             assert_eq!(model.state, NotePaneState::NoNote);
             let (model, _) = model.update(NotePaneMessage::PushNote(note.clone()));
-            assert_eq!(
-                model.state,
-                NotePaneState::WithNote(NoteContext {
-                    note: note,
-                    scroll_lines: 0,
-                    link_selection_index: 0,
-                })
-            );
+            assert_eq!(model.state, NotePaneState::WithNote(NoteContext::new(note)));
 
             let new_note = MockRepository::new().insert_note("note2", "This is another note");
 
             let (model, _) = model.update(NotePaneMessage::PushNote(new_note.clone()));
             assert_eq!(
                 model.state,
-                NotePaneState::WithNote(NoteContext {
-                    note: new_note,
-                    scroll_lines: 0,
-                    link_selection_index: 0
-                })
+                NotePaneState::WithNote(NoteContext::new(new_note))
             );
         }
 
         #[test]
+        fn test_source_mode() {
+            let note =
+                MockRepository::new().insert_note("note without extension", "This is a note");
+            let (model, _) = NotePaneModel::default().update(NotePaneMessage::PushNote(note));
+
+            // The note pane should go into source mode because the note has no supported extension.
+            assert_eq!(model.view_mode(), ViewMode::Source);
+        }
+
+        #[test]
         fn test_document() {
-            let context = NoteContext {
-                note: MockRepository::new().insert_note("note.md", "This is a note"),
-                scroll_lines: 0,
-                link_selection_index: 0,
-            };
+            let context =
+                NoteContext::new(MockRepository::new().insert_note("note.md", "This is a note"));
             assert_eq!(
                 context.document(),
                 Document::Markdown(MarkdownDocument::new("This is a note"))
             );
 
-            let context = NoteContext {
-                note: MockRepository::new()
-                    .insert_note("note without extension", "This is also a note"),
-                scroll_lines: 0,
-                link_selection_index: 0,
-            };
+            let context = NoteContext::new(
+                MockRepository::new().insert_note("note without extension", "This is also a note"),
+            );
             assert_eq!(
                 context.document(),
                 Document::Source(String::from("This is also a note"))
@@ -654,6 +701,20 @@ mod tests {
                 command,
                 Command::FollowLink(LinkTarget::Note(String::from("note B")))
             );
+        }
+
+        #[test]
+        fn test_edit_mode() {
+            let note = MockRepository::new().insert_note("note.md", "This is a note.");
+
+            let (model, _) = NotePaneModel::default().update(NotePaneMessage::PushNote(note));
+            assert_eq!(model.view_mode(), ViewMode::Browsing);
+
+            let (model, _) = model.update(NotePaneMessage::StartEdit);
+            assert_eq!(model.view_mode(), ViewMode::Edit);
+
+            let (model, _) = model.update(NotePaneMessage::StopEdit);
+            assert_eq!(model.view_mode(), ViewMode::Browsing);
         }
 
         #[test]
