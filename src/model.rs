@@ -53,6 +53,7 @@ pub enum Command {
     OpenNote(NoteKey),
     EditExternally(NoteKey),
     SearchQuery(String),
+    CommitNote(NoteSnapshot),
 }
 
 impl Update<Message> for Model {
@@ -329,6 +330,10 @@ impl Update<NotePaneMessage> for NotePaneModel {
             }
 
             if let NotePaneMessage::StopEdit = message {
+                if let EditState::Active(editor) = &context.editor {
+                    context.note.body = editor.text();
+                    command = Command::CommitNote(context.note.clone())
+                }
                 context.editor = EditState::None;
             }
 
@@ -719,7 +724,8 @@ mod tests {
         fn test_edit_mode() {
             let note = MockRepository::new().insert_note("note.md", "This is a note.");
 
-            let (model, _) = NotePaneModel::default().update(NotePaneMessage::PushNote(note));
+            let (model, _) =
+                NotePaneModel::default().update(NotePaneMessage::PushNote(note.clone()));
             assert_eq!(model.view_mode(), ViewMode::Browsing);
             assert_eq!(model.state.context().unwrap().editor, EditState::None);
 
@@ -741,9 +747,13 @@ mod tests {
                 ))
             );
 
-            let (model, _) = model.update(NotePaneMessage::StopEdit);
+            let (model, command) = model.update(NotePaneMessage::StopEdit);
             assert_eq!(model.view_mode(), ViewMode::Browsing);
             assert_eq!(model.state.context().unwrap().editor, EditState::None);
+
+            let mut new_note = note;
+            new_note.body = String::from("This is an edit.\nThis is a note.");
+            assert_eq!(command, Command::CommitNote(new_note))
         }
 
         #[test]

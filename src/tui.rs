@@ -138,6 +138,14 @@ impl App {
                     let note = self.repository.note(&note_id)?;
                     message = Message::NotePane(NotePaneMessage::PushNote(note));
                 }
+                Command::CommitNote(note) => {
+                    let NoteKey(repo_id, note_id) = &note.key.clone();
+                    assert_eq!(repo_id, self.repository.id());
+                    self.repository.commit_note(note)?;
+
+                    let note = self.repository.note(&note_id)?;
+                    message = Message::NotePane(NotePaneMessage::UpdateNote(note));
+                }
                 Command::None => {}
             }
         }
