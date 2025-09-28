@@ -3,9 +3,10 @@ use rapidfuzz::distance::jaro_winkler;
 use std::collections::HashMap;
 use std::{
     fs::{self},
-    io::{self, ErrorKind},
+    io::{self, ErrorKind, Write},
     path::{Path, PathBuf},
 };
+use tempfile::NamedTempFile;
 #[cfg(test)]
 use uuid::Uuid;
 
@@ -68,6 +69,7 @@ pub trait Repository {
         NoteKey(self.id().to_owned(), note_id.to_owned())
     }
     fn notes(&self) -> io::Result<Vec<NoteKey>>;
+    fn commit_note(&mut self, note: NoteSnapshot) -> io::Result<()>;
     fn search(&self, query: &str) -> io::Result<Vec<SearchResult>> {
         let notes = self.notes()?;
 
@@ -194,6 +196,23 @@ impl Repository for FolderRepository {
             })
             .collect())
     }
+
+    fn commit_note(&mut self, note: NoteSnapshot) -> io::Result<()> {
+        let NoteKey(repo_id, note_id) = note.key;
+        // To prevent a note from another repo to be committed to this repo.
+        assert_eq!(repo_id, self.id());
+
+        let path = self.get_note_path(&note_id);
+
+        // Write to a temporary file first to prevent data loss that can come from a partial overwrite.
+        let mut tempfile = NamedTempFile::new_in(&self.root)?;
+        tempfile.write_all(note.body.as_bytes())?;
+        // We want to wait for the file content to be saved to the temporary file before renaming it.
+        tempfile.as_file().sync_all()?;
+        tempfile.persist(path)?;
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -269,6 +288,11 @@ impl Repository for MockRepository {
             .cloned()
             .map(|note| self.note_key(&note))
             .collect())
+    }
+
+    fn commit_note(&mut self, note: NoteSnapshot) -> io::Result<()> {
+        self.insert_note(&note.key.1, &note.body);
+        Ok(())
     }
 }
 
@@ -478,5 +502,42 @@ mod tests {
         );
 
         Ok(())
+    }
+
+    #[test]
+    fn test_folder_repository_commit_note() -> io::Result<()> {
+        let (_tempdir, repo_path) = create_temp_repo_path("repository")?;
+        let mut repo = FolderRepository::new(&repo_path)?;
+
+        let mut note = repo.note("new.md")?;
+        note.body = String::from("This will become a new note.");
+
+        repo.commit_note(note)?;
+
+        let content = fs::read_to_string(repo_path.join("new.md"))?;
+        assert_eq!(content, String::from("This will become a new note."));
+
+        create_note(&repo_path, "existing.md", "This has not been changed.")?;
+        let mut note = repo.note("existing.md")?;
+        note.body = String::from("This has been changed.");
+
+        repo.commit_note(note)?;
+
+        let content = fs::read_to_string(repo_path.join("existing.md"))?;
+        assert_eq!(content, String::from("This has been changed."));
+
+        Ok(())
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_folder_repository_commit_note_wrong_repo() {
+        let (_tempdir_a, repo_path_a) = create_temp_repo_path("repo_a").unwrap();
+        let (_tempdir_b, repo_path_b) = create_temp_repo_path("repo_b").unwrap();
+        let mut repo_a = FolderRepository::new(&repo_path_a).unwrap();
+        let repo_b = FolderRepository::new(&repo_path_b).unwrap();
+
+        // This should panic as the note from repo b can not be committed to repo a.
+        let _ = repo_a.commit_note(repo_b.note("note.md").unwrap());
     }
 }
