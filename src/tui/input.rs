@@ -80,6 +80,8 @@ impl KeyHandler<InputOperation> for TextInput {
             (KeyCode::Backspace, _) => InputOperation::Backspace,
             (KeyCode::Left, _) => InputOperation::Left,
             (KeyCode::Right, _) => InputOperation::Right,
+            (KeyCode::Up, _) => InputOperation::Up,
+            (KeyCode::Down, _) => InputOperation::Down,
             (KeyCode::Char(c), _) => InputOperation::Insert(c.to_string()),
             _ => InputOperation::None,
         }

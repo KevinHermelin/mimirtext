@@ -5,6 +5,7 @@ use unicode_width::UnicodeWidthStr;
 pub struct TextInput {
     current: String,
     cursor_pos: usize,
+    desired_column: usize,
 }
 
 enum Movement {
@@ -25,6 +26,7 @@ impl TextInput {
         Self {
             current: String::new(),
             cursor_pos: 0,
+            desired_column: 0,
         }
     }
     #[cfg(test)]
@@ -32,6 +34,7 @@ impl TextInput {
         Self {
             current: text.to_owned(),
             cursor_pos,
+            desired_column: 0,
         }
     }
     fn cursor(&self) -> GraphemeCursor {
@@ -70,22 +73,75 @@ impl TextInput {
             InputOperation::Insert(text) => {
                 self.current.insert_str(self.cursor().cur_cursor(), &text);
                 self.cursor_pos = self.cursor().cur_cursor() + text.len();
+                self.desired_column = self.cursor_column();
             }
             InputOperation::Backspace => {
                 let current_pos = self.cursor().cur_cursor();
                 if let Some(new_pos) = self.move_cursor(Movement::PreviousBoundary) {
                     self.cursor_pos = new_pos;
                     self.current.drain(new_pos..current_pos);
+                    self.desired_column = self.cursor_column();
                 }
             }
             InputOperation::Left => {
                 if let Some(new_pos) = self.move_cursor(Movement::PreviousBoundary) {
                     self.cursor_pos = new_pos;
+                    self.desired_column = self.cursor_column();
                 }
             }
             InputOperation::Right => {
                 if let Some(new_pos) = self.move_cursor(Movement::NextBoundary) {
                     self.cursor_pos = new_pos;
+                    self.desired_column = self.cursor_column();
+                }
+            }
+            InputOperation::Up => {
+                let prev_lb = self.current.as_bytes()[..self.cursor_pos]
+                    .iter()
+                    .rposition(|&b| b == b'\n');
+
+                if let Some(prev_end) = prev_lb {
+                    let prev_start = self.current.as_bytes()[..prev_end]
+                        .iter()
+                        .rposition(|&b| b == b'\n')
+                        .map(|i| i + 1)
+                        .unwrap_or(0);
+
+                    self.cursor_pos = prev_start;
+                    while self.cursor_column() < self.desired_column && self.cursor_pos < prev_end {
+                        if let Some(p) = self.move_cursor(Movement::NextBoundary) {
+                            self.cursor_pos = p
+                        } else {
+                            break;
+                        }
+                    }
+                }
+            }
+
+            InputOperation::Down => {
+                let next_lb = self.current.as_bytes()[self.cursor_pos..]
+                    .iter()
+                    .position(|&b| b == b'\n')
+                    .map(|i| self.cursor_pos + i);
+
+                if let Some(next_end) = next_lb {
+                    let next_start = next_end + 1;
+                    let next_line_end = self.current.as_bytes()[next_start..]
+                        .iter()
+                        .position(|&b| b == b'\n')
+                        .map(|i| next_start + i)
+                        .unwrap_or(self.current.as_bytes().len());
+
+                    self.cursor_pos = next_start;
+                    while self.cursor_column() < self.desired_column
+                        && self.cursor_pos < next_line_end
+                    {
+                        if let Some(p) = self.move_cursor(Movement::NextBoundary) {
+                            self.cursor_pos = p
+                        } else {
+                            break;
+                        }
+                    }
                 }
             }
             InputOperation::None => {}
@@ -100,6 +156,8 @@ pub enum InputOperation {
     Backspace,
     Left,
     Right,
+    Up,
+    Down,
     None,
 }
 
@@ -269,5 +327,39 @@ mod tests {
             .apply(InputOperation::Insert(String::from("a")))
             .apply(InputOperation::Right);
         assert_eq!(input.cursor_pos(), "a".len());
+    }
+
+    #[test]
+    fn test_apply_multiline_movement() {
+        let input =
+            TextInput::new().apply(InputOperation::Insert(String::from("Hello\nWorld\nåäö")));
+        assert_eq!(input.cursor_column(), 3);
+        assert_eq!(input.cursor_row(), 2);
+
+        let input = input.apply(InputOperation::Up).apply(InputOperation::Up);
+        assert_eq!(input.cursor_column(), 3);
+        assert_eq!(input.cursor_row(), 0);
+
+        let input = input
+            .apply(InputOperation::Right)
+            .apply(InputOperation::Right);
+        assert_eq!(input.cursor_column(), 5);
+        assert_eq!(input.cursor_row(), 0);
+
+        let input = input
+            .apply(InputOperation::Down)
+            .apply(InputOperation::Down);
+        assert_eq!(input.cursor_row(), 2);
+        assert_eq!(input.cursor_column(), 3);
+
+        let input = input
+            .apply(InputOperation::Down)
+            .apply(InputOperation::Down);
+        assert_eq!(input.cursor_column(), 3);
+        assert_eq!(input.cursor_row(), 2);
+
+        let input = input.apply(InputOperation::Up);
+        assert_eq!(input.cursor_column(), 5);
+        assert_eq!(input.cursor_row(), 1);
     }
 }
