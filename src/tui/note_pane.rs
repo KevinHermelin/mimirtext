@@ -74,13 +74,20 @@ impl WidgetWithCursor for NotePaneModel {
                 let document = context.document();
 
                 if let EditState::Active(editor) = &context.editor {
+                    let max_cols = area.width;
+                    let max_rows = area.height;
+                    let page_cols = editor.cursor_column() as u16 / max_cols;
+                    let page_rows = editor.cursor_row() as u16 / max_rows;
+                    let scroll_col = page_cols * max_cols;
+                    let scroll_row = page_rows * max_rows;
+
                     let document = editor.text();
                     Paragraph::new(document)
-                        .wrap(Wrap { trim: false })
+                        .scroll((scroll_row, scroll_col))
                         .render(area, buf);
                     let cursor = Position {
-                        x: area.x + editor.cursor_column() as u16,
-                        y: area.y + editor.cursor_row() as u16,
+                        x: area.x + editor.cursor_column() as u16 % max_cols,
+                        y: area.y + editor.cursor_row() as u16 % max_rows,
                     };
                     return Some(cursor);
                 }
@@ -122,6 +129,7 @@ mod tests {
     use crate::{
         model::{NotePaneMessage, Update},
         repository::{MockRepository, Repository},
+        text_input::InputOperation,
     };
     use insta::assert_snapshot;
     use ratatui::{Terminal, backend::TestBackend};
@@ -175,6 +183,25 @@ mod tests {
         let (model, _) = model.update(NotePaneMessage::StartEdit);
 
         let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
+        terminal
+            .draw(|frame| {
+                model.render_with_cursor(frame.area(), frame.buffer_mut());
+            })
+            .unwrap();
+        assert_snapshot!(terminal.backend());
+    }
+
+    #[test]
+    fn test_editing_note_scroll() {
+        let note = MockRepository::new().insert_note("Note name.md", "");
+
+        let (model, _) = NotePaneModel::default().update(NotePaneMessage::PushNote(note));
+        let (model, _) = model.update(NotePaneMessage::StartEdit);
+        let (model, _) = model.update(NotePaneMessage::Input(InputOperation::Insert(
+            String::from("This\nnote\nspans\nmore\nlines\nthan\ncan\nbe\nshown. And this line is also longer than the width of the screen."),
+        )));
+
+        let mut terminal = Terminal::new(TestBackend::new(40, 8)).unwrap();
         terminal
             .draw(|frame| {
                 model.render_with_cursor(frame.area(), frame.buffer_mut());

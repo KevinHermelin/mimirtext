@@ -1,0 +1,12 @@
+---
+source: src/tui/note_pane.rs
+expression: terminal.backend()
+---
+"┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓"
+"┃                                      ┃"
+"┃                                      ┃"
+"┃an the width of the screen.           ┃"
+"┃                                      ┃"
+"┃                                      ┃"
+"┃                                      ┃"
+"┗ Note name.md ━━━━━━━━━━━━━━━━━━ EDIT ┛"
