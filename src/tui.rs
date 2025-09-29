@@ -22,7 +22,7 @@ use ratatui::{
     widgets::{Block, Clear, Paragraph, Widget},
 };
 use std::{
-    io::{self, ErrorKind, stdout},
+    io::{self, stdout},
     path::{Path, PathBuf},
 };
 
@@ -36,13 +36,14 @@ use crate::{
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 struct Cli {
-    file_path: PathBuf,
+    #[arg(default_value = ".")]
+    path: PathBuf,
 }
 
 pub fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    let file_path = cli.file_path;
+    let file_path = cli.path;
     let mut app = App::from_path(&file_path)?;
 
     color_eyre::install()?;
@@ -63,11 +64,15 @@ pub trait WidgetWithCursor {
 }
 
 impl App {
-    fn new(repository: Box<dyn Repository>, note: NoteSnapshot) -> Self {
-        let model = Model::default();
-        let (model, command) = model.update(Message::NotePane(NotePaneMessage::PushNote(note)));
+    fn new(repository: Box<dyn Repository>, note: Option<NoteSnapshot>) -> Self {
+        let mut model = Model::default();
 
-        assert_eq!(command, Command::None);
+        if let Some(note) = note {
+            let (new_model, command) =
+                model.update(Message::NotePane(NotePaneMessage::PushNote(note)));
+            model = new_model;
+            assert_eq!(command, Command::None);
+        }
 
         return App {
             model: model,
@@ -77,10 +82,6 @@ impl App {
     }
     fn from_path(path: &Path) -> io::Result<Self> {
         let (repo, note) = FolderRepository::open_path(&path)?;
-        let note = note.ok_or(io::Error::new(
-            ErrorKind::Other,
-            "Path does not resolve to a note file",
-        ))?;
 
         Ok(App::new(Box::new(repo), note))
     }
@@ -229,7 +230,7 @@ mod tests {
     fn test_render_error() {
         let mut repository = MockRepository::new();
         let note = repository.insert_note("Note name.md", "This is a file.");
-        let mut app = App::new(Box::new(repository), note);
+        let mut app = App::new(Box::new(repository), Some(note));
 
         app.error_message = Some(String::from("This is an error"));
 
