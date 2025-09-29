@@ -82,6 +82,7 @@ impl KeyHandler<InputOperation> for TextInput {
             (KeyCode::Right, _) => InputOperation::Right,
             (KeyCode::Up, _) => InputOperation::Up,
             (KeyCode::Down, _) => InputOperation::Down,
+            (KeyCode::Enter, _) => InputOperation::Insert(String::from("\n")),
             (KeyCode::Char(c), _) => InputOperation::Insert(c.to_string()),
             _ => InputOperation::None,
         }
