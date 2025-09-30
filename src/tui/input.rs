@@ -22,7 +22,7 @@ impl KeyHandler<Message> for Model {
         }
 
         let message = match (key_event.code, key_event.modifiers) {
-            (KeyCode::Char('q'), _) => Message::Quit,
+            (KeyCode::Char('q'), KeyModifiers::CONTROL) => Message::Quit,
             (KeyCode::Char('p'), KeyModifiers::CONTROL) => Message::OpenSearch,
             _ => Message::None,
         };
