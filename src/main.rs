@@ -1,6 +1,7 @@
 mod markdown;
 mod model;
 mod repository;
+mod selection;
 mod text_input;
 mod tui;
 

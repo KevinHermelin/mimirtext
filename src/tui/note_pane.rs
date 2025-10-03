@@ -1,14 +1,15 @@
 use ratatui::{
     buffer::Buffer,
-    layout::{Position, Rect},
+    layout::{Offset, Position, Rect},
     style::{Color, Stylize},
     symbols::border,
     text::Line,
     widgets::{Block, Paragraph, Widget, Wrap},
 };
+use unicode_width::UnicodeWidthStr;
 
 use crate::{
-    model::{Document, EditState, NotePaneModel, NotePaneState, ViewMode},
+    model::{Document, NotePaneModel, NotePaneState, ViewMode},
     tui::{WidgetWithCursor, markdown_view::MarkdownView, utils::NonIdealState},
 };
 
@@ -73,7 +74,7 @@ impl WidgetWithCursor for NotePaneModel {
             NotePaneState::WithNote(context) => {
                 let document = context.document();
 
-                if let EditState::Active(editor) = &context.editor {
+                if let Some(editor) = &context.editor {
                     let max_cols = area.width;
                     let max_rows = area.height;
                     let page_cols = editor.cursor_column() as u16 / max_cols;
@@ -89,6 +90,46 @@ impl WidgetWithCursor for NotePaneModel {
                         x: area.x + editor.cursor_column() as u16 % max_cols,
                         y: area.y + editor.cursor_row() as u16 % max_rows,
                     };
+
+                    if let Some(completions) = editor.completions() {
+                        let mut completion_area = Rect {
+                            x: cursor.x,
+                            y: cursor.y + 1,
+                            width: 20,
+                            height: 5,
+                        };
+
+                        let mut lines = vec![];
+                        for completion in completions.items().iter().take(5) {
+                            let text = completion.display_text.clone();
+
+                            // To get the entire block filled.
+                            let fill_width =
+                                (completion_area.width as usize).saturating_sub(text.width());
+
+                            let text = text.clone() + &" ".repeat(fill_width);
+                            let line = Line::from(text).bg(Color::DarkGray);
+                            lines.push(line);
+                        }
+
+                        // Move area so it fits in the pane.
+                        let overflow_x = completion_area.right().saturating_sub(area.right());
+                        let overflow_y = completion_area.bottom().saturating_sub(area.bottom());
+                        if overflow_x > 0 {
+                            completion_area = completion_area.offset(Offset {
+                                x: -(overflow_x as i32),
+                                y: 0,
+                            });
+                        }
+                        if overflow_y > 0 {
+                            completion_area = completion_area.offset(Offset {
+                                x: 0,
+                                y: -(completion_area.height as i32) - 1,
+                            });
+                        }
+                        Paragraph::new(lines).render(completion_area, buf);
+                    }
+
                     return Some(cursor);
                 }
 
@@ -129,7 +170,7 @@ mod tests {
     use crate::{
         model::{NotePaneMessage, Update},
         repository::{MockRepository, Repository},
-        text_input::InputOperation,
+        text_input::{Completion, InputOperation},
     };
     use insta::assert_snapshot;
     use ratatui::{Terminal, backend::TestBackend};
@@ -202,6 +243,28 @@ mod tests {
         )));
 
         let mut terminal = Terminal::new(TestBackend::new(40, 8)).unwrap();
+        terminal
+            .draw(|frame| {
+                model.render_with_cursor(frame.area(), frame.buffer_mut());
+            })
+            .unwrap();
+        assert_snapshot!(terminal.backend());
+    }
+
+    #[test]
+    fn test_editing_note_completions() {
+        let note = MockRepository::new().insert_note("Note name.md", "");
+
+        let (model, _) = NotePaneModel::default().update(NotePaneMessage::PushNote(note));
+        let (model, _) = model.update(NotePaneMessage::StartEdit);
+        let (model, _) = model.update(NotePaneMessage::Input(InputOperation::Insert(
+            String::from("[["),
+        )));
+        let (model, _) = model.update(NotePaneMessage::UpdateCompletion(vec![
+            Completion::note_link(0..2, "note"),
+        ]));
+
+        let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
         terminal
             .draw(|frame| {
                 model.render_with_cursor(frame.area(), frame.buffer_mut());

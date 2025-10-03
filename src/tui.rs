@@ -30,6 +30,7 @@ use crate::{
     markdown::LinkTarget,
     model::{Command, Message, Model, NotePaneMessage, RunningState, SearchWindowMessage, Update},
     repository::{FolderRepository, NoteKey, NoteSnapshot, Repository},
+    text_input::Completion,
     tui::{input::KeyHandler, utils::center},
 };
 
@@ -146,6 +147,16 @@ impl App {
 
                     let note = self.repository.note(&note_id)?;
                     message = Message::NotePane(NotePaneMessage::UpdateNote(note));
+                }
+                Command::RequestLinkCompletion(range, text) => {
+                    let results = self.repository.search(&text)?;
+                    let completions = results
+                        .iter()
+                        .map(|result| result.key.1.clone().split(".md").next().unwrap().to_owned())
+                        .map(|reference| Completion::note_link(range.clone(), &reference))
+                        .collect();
+
+                    message = Message::NotePane(NotePaneMessage::UpdateCompletion(completions));
                 }
                 Command::None => {}
             }

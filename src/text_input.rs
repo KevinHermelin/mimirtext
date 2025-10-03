@@ -1,11 +1,33 @@
+use std::ops::Range;
+
 use unicode_segmentation::GraphemeCursor;
 use unicode_width::UnicodeWidthStr;
+
+use crate::selection::NonEmptySelection;
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Completion {
+    pub range: Range<usize>,
+    pub full_text: String,
+    pub display_text: String,
+}
+
+impl Completion {
+    pub fn note_link(range: Range<usize>, note_reference: &str) -> Self {
+        Self {
+            range,
+            display_text: note_reference.to_owned(),
+            full_text: format!("[[{}]]", note_reference),
+        }
+    }
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct TextInput {
     current: String,
     cursor_pos: usize,
     desired_column: usize,
+    completions: Option<NonEmptySelection<Completion>>,
 }
 
 enum Movement {
@@ -27,6 +49,7 @@ impl TextInput {
             current: String::new(),
             cursor_pos: 0,
             desired_column: 0,
+            completions: None,
         }
     }
     #[cfg(test)]
@@ -35,6 +58,7 @@ impl TextInput {
             current: text.to_owned(),
             cursor_pos,
             desired_column: 0,
+            completions: None,
         }
     }
     fn cursor(&self) -> GraphemeCursor {
@@ -43,9 +67,11 @@ impl TextInput {
     pub fn text(&self) -> String {
         self.current.clone()
     }
-    #[cfg(test)]
-    fn cursor_pos(&self) -> usize {
+    pub fn cursor_pos(&self) -> usize {
         self.cursor_pos
+    }
+    pub fn completions(&self) -> &Option<NonEmptySelection<Completion>> {
+        &self.completions
     }
     pub fn cursor_row(&self) -> usize {
         self.current[..self.cursor_pos].split('\n').count() - 1
@@ -56,6 +82,9 @@ impl TextInput {
             .last()
             .expect("should have at least one line")
             .width()
+    }
+    pub fn before_cursor(&self) -> &str {
+        &self.current[..self.cursor_pos]
     }
     fn move_cursor(&self, movement: Movement) -> Option<usize> {
         let mut cursor = self.cursor();
@@ -69,6 +98,11 @@ impl TextInput {
         .expect("chunk should be complete")
     }
     pub fn apply(mut self, operation: InputOperation) -> Self {
+        // This ensures that we are not left with any completions on the old buffer,
+        // that would otherwise cause issues.
+        let completions = self.completions;
+        self.completions = None;
+
         match operation {
             InputOperation::Insert(text) => {
                 self.current.insert_str(self.cursor().cur_cursor(), &text);
@@ -117,7 +151,6 @@ impl TextInput {
                     }
                 }
             }
-
             InputOperation::Down => {
                 let next_lb = self.current.as_bytes()[self.cursor_pos..]
                     .iter()
@@ -144,8 +177,40 @@ impl TextInput {
                     }
                 }
             }
+            InputOperation::NextCompletion => {
+                self.completions = completions.map(|completions| completions.next())
+            }
+            InputOperation::PreviousCompletion => {
+                self.completions = completions.map(|completions| completions.previous())
+            }
+            InputOperation::Complete => {
+                let selected_completion = completions
+                    .as_ref()
+                    .map(|completions| completions.selected().clone());
+
+                if let Some(completion) = selected_completion {
+                    // This will panic if start or end position of the completion is not located on a character boundary
+                    // or if the positions are outside the current buffer. The responsibility to ensure that this does not
+                    // happen will ultimately fall on the caller of this function.
+                    let before = &self.current[..completion.range.start];
+                    let after = &self.current[completion.range.end..];
+
+                    self.cursor_pos = before.len() + completion.full_text.len();
+                    self.current = before.to_owned() + &completion.full_text + after;
+                }
+            }
             InputOperation::None => {}
         };
+        self
+    }
+    pub fn provide_completions(mut self, completions: Vec<Completion>) -> Self {
+        if let Some(current_completions) = self.completions.clone() {
+            // Do not disrupt any current selection if old and new completions are identical.
+            if *current_completions.items() == completions {
+                return self;
+            }
+        }
+        self.completions = NonEmptySelection::new(completions);
         self
     }
 }
@@ -159,6 +224,9 @@ pub enum InputOperation {
     Up,
     Down,
     None,
+    NextCompletion,
+    PreviousCompletion,
+    Complete,
 }
 
 #[cfg(test)]
@@ -173,6 +241,13 @@ mod tests {
     #[test]
     fn test_from_str() {
         assert_eq!(TextInput::from("Test string").text(), "Test string");
+    }
+
+    #[test]
+    fn test_cursor_pos() {
+        assert_eq!(TextInput::new_with("Text", 0).cursor_pos(), 0);
+        assert_eq!(TextInput::new_with("Text", 2).cursor_pos(), 2);
+        assert_eq!(TextInput::new_with("Text", 3).cursor_pos(), 3);
     }
 
     #[test]
@@ -226,6 +301,37 @@ mod tests {
                 .apply(InputOperation::Left)
                 .cursor_row(),
             0
+        );
+    }
+
+    #[test]
+    fn test_before_cursor() {
+        assert_eq!(
+            TextInput::new()
+                .apply(InputOperation::Insert(String::from("Test with one line")))
+                .before_cursor(),
+            "Test with one line"
+        );
+
+        assert_eq!(
+            TextInput::new()
+                .apply(InputOperation::Insert(String::from(
+                    "Test with\nmultiple\nlines"
+                )))
+                .apply(InputOperation::Left)
+                .before_cursor(),
+            "Test with\nmultiple\nline"
+        );
+
+        assert_eq!(
+            TextInput::new()
+                .apply(InputOperation::Insert(String::from(
+                    "Test with\nmultiple\nlines"
+                )))
+                .apply(InputOperation::Up)
+                .apply(InputOperation::Left)
+                .before_cursor(),
+            "Test with\nmult"
         );
     }
 
@@ -361,5 +467,52 @@ mod tests {
         let input = input.apply(InputOperation::Up);
         assert_eq!(input.cursor_column(), 5);
         assert_eq!(input.cursor_row(), 1);
+    }
+
+    #[test]
+    fn test_completions() {
+        let input = TextInput::new()
+            .apply(InputOperation::Insert(String::from("Start with a [[.")))
+            .apply(InputOperation::Left);
+        assert_eq!(*input.completions(), None);
+
+        let completions = vec![
+            Completion::note_link("Start with a ".len().."Start with a [[".len(), "note"),
+            Completion::note_link("Start with a ".len().."Start with a [[".len(), "link"),
+            Completion::note_link("Start with a ".len().."Start with a [[".len(), "list"),
+        ];
+        let input = input.provide_completions(completions.clone());
+        assert_eq!(
+            *input.completions(),
+            NonEmptySelection::new(completions.clone())
+        );
+
+        let input = input
+            .apply(InputOperation::NextCompletion)
+            .apply(InputOperation::NextCompletion)
+            // Providing identical completions should not disrupt the selection.
+            .provide_completions(completions)
+            .apply(InputOperation::PreviousCompletion)
+            .apply(InputOperation::Complete);
+
+        assert_eq!(input.text(), String::from("Start with a [[link]]."));
+        assert_eq!(input.cursor_pos(), "Start with a [[link]]".len())
+    }
+
+    #[test]
+    fn test_empties_completion() {
+        let input = TextInput::from("Some text")
+            .provide_completions(vec![Completion::note_link(0..1, "Note")]);
+
+        for operation in [
+            InputOperation::Left,
+            InputOperation::Right,
+            InputOperation::Up,
+            InputOperation::Down,
+            InputOperation::Insert(String::from("test")),
+            InputOperation::Backspace,
+        ] {
+            assert_eq!(input.clone().apply(operation).completions, None);
+        }
     }
 }

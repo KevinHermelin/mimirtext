@@ -1,7 +1,9 @@
+use std::ops::Range;
+
 use crate::{
     markdown::{LinkRef, LinkTarget, MarkdownDocument},
     repository::{NoteKey, NoteSnapshot, SearchResult},
-    text_input::{InputOperation, TextInput},
+    text_input::{Completion, InputOperation, TextInput},
 };
 
 pub trait ClampAdd: Sized {
@@ -54,6 +56,7 @@ pub enum Command {
     EditExternally(NoteKey),
     SearchQuery(String),
     CommitNote(NoteSnapshot),
+    RequestLinkCompletion(Range<usize>, String),
 }
 
 impl Update<Message> for Model {
@@ -155,17 +158,11 @@ impl Update<SearchWindowMessage> for SearchWindowModel {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum EditState {
-    None,
-    Active(TextInput),
-}
-
-#[derive(Clone, Debug, PartialEq)]
 pub struct NoteContext {
     pub note: NoteSnapshot,
     pub scroll_lines: isize,
     pub link_selection_index: isize,
-    pub editor: EditState,
+    pub editor: Option<TextInput>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -180,7 +177,7 @@ impl NoteContext {
             note,
             scroll_lines: 0,
             link_selection_index: 0,
-            editor: EditState::None,
+            editor: None,
         }
     }
 
@@ -243,7 +240,7 @@ pub enum ViewMode {
 impl NotePaneModel {
     pub fn view_mode(&self) -> ViewMode {
         if let Some(context) = self.state.context() {
-            if let EditState::Active(_) = context.editor {
+            if let Some(_) = context.editor {
                 return ViewMode::Edit;
             }
 
@@ -326,21 +323,45 @@ impl Update<NotePaneMessage> for NotePaneModel {
             );
 
             if let NotePaneMessage::StartEdit = message {
-                context.editor = EditState::Active(TextInput::from(context.note.body.as_str()));
+                context.editor = Some(TextInput::from(context.note.body.as_str()));
             }
 
             if let NotePaneMessage::StopEdit = message {
-                if let EditState::Active(editor) = &context.editor {
+                if let Some(editor) = &context.editor {
                     context.note.body = editor.text();
                     command = Command::CommitNote(context.note.clone())
                 }
-                context.editor = EditState::None;
+                context.editor = None;
             }
 
             if let NotePaneMessage::Input(operation) = &message {
-                if let EditState::Active(editor) = &context.editor {
-                    context.editor = EditState::Active(editor.clone().apply(operation.clone()));
+                if let Some(editor) = &context.editor {
+                    let editor = editor.clone().apply(operation.clone());
+
+                    // Search for unfinished wiki links, i.e. "[[" without a closing "]]", on the current line.
+                    let search_text = editor.before_cursor().split('\n').last().unwrap();
+                    let search_text = search_text.split("]]").last().unwrap();
+                    // If there is any "[[" in search text now, it means that they have not been closed
+                    // up until the cursor. This means that we should trigger autocomplete.
+                    if search_text.contains("[[") {
+                        let search_text = search_text.split("[[").last().unwrap();
+                        let index = editor.text().rfind("[[").unwrap();
+                        command = Command::RequestLinkCompletion(
+                            index..editor.cursor_pos(),
+                            search_text.to_owned(),
+                        )
+                    }
+
+                    context.editor = Some(editor);
                 }
+            }
+
+            if let NotePaneMessage::UpdateCompletion(completions) = &message {
+                let editor = context
+                    .editor
+                    .clone()
+                    .expect("should have an editor if provided with completions");
+                context.editor = Some(editor.provide_completions(completions.clone()));
             }
 
             if let NotePaneMessage::FollowLink = message {
@@ -373,6 +394,7 @@ pub enum NotePaneMessage {
     StartEdit,
     StopEdit,
     Input(InputOperation),
+    UpdateCompletion(Vec<Completion>),
     None,
 }
 
@@ -539,7 +561,7 @@ mod tests {
                     note,
                     scroll_lines: 0,
                     link_selection_index: 0,
-                    editor: EditState::None,
+                    editor: None,
                 }
             );
         }
@@ -727,13 +749,13 @@ mod tests {
             let (model, _) =
                 NotePaneModel::default().update(NotePaneMessage::PushNote(note.clone()));
             assert_eq!(model.view_mode(), ViewMode::Browsing);
-            assert_eq!(model.state.context().unwrap().editor, EditState::None);
+            assert_eq!(model.state.context().unwrap().editor, None);
 
             let (model, _) = model.update(NotePaneMessage::StartEdit);
             assert_eq!(model.view_mode(), ViewMode::Edit);
             assert_eq!(
                 model.state.context().unwrap().editor,
-                EditState::Active(TextInput::new_with("This is a note.", 0))
+                Some(TextInput::new_with("This is a note.", 0))
             );
 
             let (model, _) = model.update(NotePaneMessage::Input(InputOperation::Insert(
@@ -741,7 +763,7 @@ mod tests {
             )));
             assert_eq!(
                 model.state.context().unwrap().editor,
-                EditState::Active(TextInput::new_with(
+                Some(TextInput::new_with(
                     "This is an edit.\nThis is a note.",
                     "This is an edit.\n".len()
                 ))
@@ -749,11 +771,59 @@ mod tests {
 
             let (model, command) = model.update(NotePaneMessage::StopEdit);
             assert_eq!(model.view_mode(), ViewMode::Browsing);
-            assert_eq!(model.state.context().unwrap().editor, EditState::None);
+            assert_eq!(model.state.context().unwrap().editor, None);
 
             let mut new_note = note;
             new_note.body = String::from("This is an edit.\nThis is a note.");
             assert_eq!(command, Command::CommitNote(new_note))
+        }
+
+        #[test]
+        fn test_link_completions() {
+            let note = MockRepository::new().insert_note("note.md", "");
+
+            let model = NotePaneModel::default();
+            let (model, _) = model.update(NotePaneMessage::PushNote(note));
+            let (model, _) = model.update(NotePaneMessage::StartEdit);
+            let (model, command) = model.update(NotePaneMessage::Input(InputOperation::Insert(
+                String::from("Add a [["),
+            )));
+
+            assert_eq!(
+                command,
+                Command::RequestLinkCompletion("Add a ".len().."Add a [[".len(), String::from(""))
+            );
+
+            let completions = vec![Completion::note_link(
+                "Add a ".len().."Add a [[".len(),
+                "note",
+            )];
+
+            let (model, _) = model.update(NotePaneMessage::UpdateCompletion(completions.clone()));
+            assert_eq!(
+                *model
+                    .state
+                    .context()
+                    .unwrap()
+                    .editor
+                    .unwrap()
+                    .completions()
+                    .as_ref()
+                    .unwrap()
+                    .items(),
+                completions
+            );
+
+            let (_, command) = model.update(NotePaneMessage::Input(InputOperation::Insert(
+                String::from("no"),
+            )));
+            assert_eq!(
+                command,
+                Command::RequestLinkCompletion(
+                    "Add a ".len().."Add a [[no".len(),
+                    String::from("no")
+                )
+            );
         }
 
         #[test]

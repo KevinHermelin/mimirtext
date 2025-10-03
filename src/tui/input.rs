@@ -2,8 +2,8 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::{
     model::{
-        EditState, Message, Model, NotePaneMessage, NotePaneModel, NotePaneState,
-        SearchWindowMessage, SearchWindowModel,
+        Message, Model, NotePaneMessage, NotePaneModel, NotePaneState, SearchWindowMessage,
+        SearchWindowModel,
     },
     text_input::{InputOperation, TextInput},
 };
@@ -44,7 +44,7 @@ impl KeyHandler<NotePaneMessage> for NotePaneModel {
         };
 
         if let NotePaneState::WithNote(context) = &self.state {
-            if let EditState::Active(editor) = &context.editor {
+            if let Some(editor) = &context.editor {
                 return NotePaneMessage::Input(editor.handle_key_event(key_event));
             }
         }
