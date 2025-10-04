@@ -3,7 +3,7 @@ use std::ops::Range;
 use crate::{
     markdown::{LinkRef, LinkTarget, MarkdownDocument},
     repository::{NoteKey, NoteSnapshot, SearchResult},
-    text_input::{Completion, InputOperation, TextInput},
+    text_input::{Completion, InputOperation, TextInput, TextInputConfig},
 };
 
 pub trait ClampAdd: Sized {
@@ -238,6 +238,9 @@ pub enum ViewMode {
 }
 
 impl NotePaneModel {
+    pub fn editor_config(&self) -> TextInputConfig {
+        TextInputConfig::default()
+    }
     pub fn view_mode(&self) -> ViewMode {
         if let Some(context) = self.state.context() {
             if let Some(_) = context.editor {
@@ -323,7 +326,9 @@ impl Update<NotePaneMessage> for NotePaneModel {
             );
 
             if let NotePaneMessage::StartEdit = message {
-                context.editor = Some(TextInput::from(context.note.body.as_str()));
+                context.editor = Some(
+                    TextInput::from(context.note.body.as_str()).with_config(self.editor_config()),
+                );
             }
 
             if let NotePaneMessage::StopEdit = message {

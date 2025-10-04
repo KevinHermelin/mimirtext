@@ -59,6 +59,13 @@ impl NotePaneModel {
 
         inner_area
     }
+    pub fn clean_text(&self, text: &str) -> String {
+        // Tabs seem to render weirdly in the Ratatui.
+        let tab_columns = self.editor_config().tab_columns;
+        assert!(tab_columns >= 1);
+        let text = text.replace('\t', &(String::from("⇥") + &" ".repeat(tab_columns - 1)));
+        text
+    }
 }
 
 impl WidgetWithCursor for NotePaneModel {
@@ -83,6 +90,8 @@ impl WidgetWithCursor for NotePaneModel {
                     let scroll_row = page_rows * max_rows;
 
                     let document = editor.text();
+                    let document = self.clean_text(&document);
+
                     Paragraph::new(document)
                         .scroll((scroll_row, scroll_col))
                         .render(area, buf);
@@ -152,7 +161,7 @@ impl WidgetWithCursor for NotePaneModel {
                             .render(area, buf);
                     }
                     Document::Source(source) => {
-                        Paragraph::new(source)
+                        Paragraph::new(self.clean_text(&source))
                             .scroll((context.scroll_lines as u16, 0))
                             .wrap(Wrap { trim: false })
                             .render(area, buf);
@@ -308,5 +317,14 @@ mod tests {
         assert_snapshot!(terminal.backend());
 
         Ok(())
+    }
+
+    #[test]
+    fn test_clean() {
+        assert_eq!(NotePaneModel::default().editor_config().tab_columns, 2);
+        assert_eq!(
+            NotePaneModel::default().clean_text("Contains a \t tab."),
+            "Contains a ⇥  tab."
+        );
     }
 }

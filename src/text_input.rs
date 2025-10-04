@@ -23,11 +23,23 @@ impl Completion {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct TextInputConfig {
+    pub tab_columns: usize,
+}
+
+impl Default for TextInputConfig {
+    fn default() -> Self {
+        Self { tab_columns: 2 }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct TextInput {
     current: String,
     cursor_pos: usize,
     desired_column: usize,
     completions: Option<NonEmptySelection<Completion>>,
+    config: TextInputConfig,
 }
 
 enum Movement {
@@ -50,6 +62,7 @@ impl TextInput {
             cursor_pos: 0,
             desired_column: 0,
             completions: None,
+            config: TextInputConfig::default(),
         }
     }
     #[cfg(test)]
@@ -59,7 +72,12 @@ impl TextInput {
             cursor_pos,
             desired_column: 0,
             completions: None,
+            config: TextInputConfig::default(),
         }
+    }
+    pub fn with_config(mut self, config: TextInputConfig) -> Self {
+        self.config = config;
+        self
     }
     fn cursor(&self) -> GraphemeCursor {
         GraphemeCursor::new(self.cursor_pos, self.current.len(), true)
@@ -77,11 +95,16 @@ impl TextInput {
         self.current[..self.cursor_pos].split('\n').count() - 1
     }
     pub fn cursor_column(&self) -> usize {
-        self.current[..self.cursor_pos]
+        let current_line = self.current[..self.cursor_pos]
             .split('\n')
             .last()
-            .expect("should have at least one line")
-            .width()
+            .expect("should have at least one line");
+
+        assert!(
+            self.config.tab_columns >= 1,
+            "tabs cannot be less than 1 in width"
+        );
+        current_line.width() + current_line.matches('\t').count() * (self.config.tab_columns - 1)
     }
     pub fn before_cursor(&self) -> &str {
         &self.current[..self.cursor_pos]
@@ -277,6 +300,24 @@ mod tests {
                 .apply(InputOperation::Insert(String::from("Test\nNew")))
                 .cursor_column(),
             3
+        );
+
+        // Depends on config.
+        assert_eq!(
+            TextInput::new()
+                .apply(InputOperation::Insert(String::from("\tTest\n\t\tNew")))
+                .cursor_column(),
+            2 + 2 + 3
+        );
+
+        let mut config = TextInputConfig::default();
+        config.tab_columns = 4;
+        assert_eq!(
+            TextInput::new()
+                .with_config(config)
+                .apply(InputOperation::Insert(String::from("\tTest\n\t\tNew")))
+                .cursor_column(),
+            4 + 4 + 3
         );
     }
     #[test]
