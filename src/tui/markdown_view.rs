@@ -58,6 +58,12 @@ impl MarkdownDocument {
                     }
                     line.push(Span::styled(text, style));
                 }
+                Event::SoftBreak => {
+                    flush_line(&mut lines, &mut line);
+                }
+                Event::HardBreak => {
+                    flush_line(&mut lines, &mut line);
+                }
                 Event::Start(tag) => match tag {
                     Tag::Heading { .. } => {
                         if lines.len() != 0 || line.len() != 0 {
