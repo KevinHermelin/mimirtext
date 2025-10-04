@@ -198,6 +198,9 @@ impl TextInput {
                             break;
                         }
                     }
+                } else {
+                    // There is no next line.
+                    self.cursor_pos = self.current.len();
                 }
             }
             InputOperation::NextCompletion => {
@@ -496,8 +499,8 @@ mod tests {
         let input = input
             .apply(InputOperation::Down)
             .apply(InputOperation::Down);
-        assert_eq!(input.cursor_row(), 2);
         assert_eq!(input.cursor_column(), 3);
+        assert_eq!(input.cursor_row(), 2);
 
         let input = input
             .apply(InputOperation::Down)
@@ -508,6 +511,21 @@ mod tests {
         let input = input.apply(InputOperation::Up);
         assert_eq!(input.cursor_column(), 5);
         assert_eq!(input.cursor_row(), 1);
+
+        let input = input
+            .apply(InputOperation::Left)
+            .apply(InputOperation::Left)
+            .apply(InputOperation::Left)
+            .apply(InputOperation::Left)
+            .apply(InputOperation::Left)
+            .apply(InputOperation::Down);
+        assert_eq!(input.cursor_column(), 0);
+        assert_eq!(input.cursor_row(), 2);
+
+        // Applying down movement on last line should place cursor at the end of the line.
+        let input = input.apply(InputOperation::Down);
+        assert_eq!(input.cursor_column(), 3);
+        assert_eq!(input.cursor_row(), 2);
     }
 
     #[test]
