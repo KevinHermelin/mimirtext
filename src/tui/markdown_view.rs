@@ -56,7 +56,14 @@ impl MarkdownDocument {
                             style = style.reversed();
                         }
                     }
-                    line.push(Span::styled(text, style));
+                    // There might be newlines in the text.
+                    for (i, part) in text.split('\n').enumerate() {
+                        // First line in this text event might be a continuation of a previous text event.
+                        if i > 0 {
+                            flush_line(&mut lines, &mut line);
+                        }
+                        line.push(Span::styled(part.to_owned(), style));
+                    }
                 }
                 Event::SoftBreak => {
                     flush_line(&mut lines, &mut line);
