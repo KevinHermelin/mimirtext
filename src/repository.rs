@@ -111,7 +111,7 @@ impl FolderRepository {
         let root = fs::canonicalize(root)?;
         Ok(FolderRepository {
             id: name_from_path(&root)?.to_owned(),
-            root: root,
+            root,
         })
     }
     pub fn open_path(path: &Path) -> io::Result<(Self, Option<NoteSnapshot>)> {
@@ -234,9 +234,9 @@ impl MockRepository {
     pub fn insert_note(&mut self, id: &str, content: &str) -> NoteSnapshot {
         let title = id.to_owned();
         let body = content.to_owned();
-        let extension = id.split('.').last();
+        let extension = id.split('.').next_back();
 
-        let key = self.note_key(&id);
+        let key = self.note_key(id);
 
         let note = NoteSnapshot {
             key,
@@ -260,7 +260,7 @@ impl Repository for MockRepository {
 
     fn note(&self, id: &str) -> io::Result<NoteSnapshot> {
         let note_key = NoteKey(self.id().to_owned(), id.to_owned());
-        let extension = id.split('.').last();
+        let extension = id.split('.').next_back();
 
         let note = self
             .notes
@@ -357,7 +357,7 @@ mod tests {
 
         // Or if in a subfolder of the repository, using "..".
         fs::create_dir("subfolder")?;
-        set_current_dir(&repo_path.join("subfolder"))?;
+        set_current_dir(repo_path.join("subfolder"))?;
 
         let repo = FolderRepository::new(&PathBuf::from(".."))?;
 
@@ -424,7 +424,7 @@ mod tests {
 
         // It should also work if pointing to a file inside the current directory.
         set_current_dir(repo_path)?;
-        let (repo, note) = FolderRepository::open_path(&Path::new("note.md"))?;
+        let (repo, note) = FolderRepository::open_path(Path::new("note.md"))?;
 
         assert_eq!(repo, expected_repo);
         assert_eq!(note, Some(expected_note.clone()));

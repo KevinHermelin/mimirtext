@@ -43,11 +43,9 @@ impl NoteContext {
 
     fn max_link_selection(&self) -> isize {
         match self.document() {
-            Document::Markdown(markdown_document) => markdown_document
-                .get_links()
-                .iter()
-                .count()
-                .saturating_sub(1) as isize,
+            Document::Markdown(markdown_document) => {
+                markdown_document.get_links().len().saturating_sub(1) as isize
+            }
             Document::Source(_) => 0,
         }
     }
@@ -66,9 +64,9 @@ impl NoteContext {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub enum NotePaneState {
     #[default]
-    NoNote,
-    WithNote(NoteContext),
-    LoadingNote(NoteKey),
+    Empty,
+    With(NoteContext),
+    Loading(NoteKey),
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -91,7 +89,7 @@ impl NotePaneModel {
     }
     pub fn view_mode(&self) -> ViewMode {
         if let Some(context) = self.state.context() {
-            if let Some(_) = context.editor {
+            if context.editor.is_some() {
                 return ViewMode::Edit;
             }
 
@@ -106,10 +104,10 @@ impl NotePaneModel {
 
 impl NotePaneState {
     fn from_note(note: NoteSnapshot) -> Self {
-        Self::WithNote(NoteContext::new(note))
+        Self::With(NoteContext::new(note))
     }
     fn context(&self) -> Option<NoteContext> {
-        if let Self::WithNote(context) = self {
+        if let Self::With(context) = self {
             Some(context.clone())
         } else {
             None
@@ -117,9 +115,9 @@ impl NotePaneState {
     }
     fn key(&self) -> Option<&NoteKey> {
         match self {
-            Self::LoadingNote(note) => Some(note),
-            Self::WithNote(context) => Some(&context.note.key),
-            Self::NoNote => None,
+            Self::Loading(note) => Some(note),
+            Self::With(context) => Some(&context.note.key),
+            Self::Empty => None,
         }
     }
 }
@@ -143,13 +141,13 @@ impl Update<NotePaneMessage> for NotePaneModel {
 
             model.state = new_note
                 .clone()
-                .map(NotePaneState::LoadingNote)
-                .unwrap_or(NotePaneState::NoNote);
+                .map(NotePaneState::Loading)
+                .unwrap_or(NotePaneState::Empty);
 
             command = new_note.map(Command::ServeNote).unwrap_or(Command::None);
         }
 
-        if let NotePaneState::WithNote(context) = &mut model.state {
+        if let NotePaneState::With(context) = &mut model.state {
             let delta_scroll = match message {
                 NotePaneMessage::ScrollUp => -1,
                 NotePaneMessage::ScrollDown => 1,
@@ -192,7 +190,7 @@ impl Update<NotePaneMessage> for NotePaneModel {
                     let editor = editor.clone().apply(operation.clone());
 
                     // Search for unfinished wiki links, i.e. "[[" without a closing "]]", on the current line.
-                    let search_text = editor.before_cursor().split('\n').last().unwrap();
+                    let search_text = editor.before_cursor().split('\n').next_back().unwrap();
                     let search_text = search_text.split("]]").last().unwrap();
                     // If there is any "[[" in search text now, it means that they have not been closed
                     // up until the cursor. This means that we should trigger autocomplete.
@@ -252,7 +250,6 @@ pub enum NotePaneMessage {
 }
 
 #[cfg(test)]
-
 mod tests {
     use crate::{markdown::LinkTarget, repository::MockRepository};
 
@@ -263,7 +260,7 @@ mod tests {
         assert_eq!(
             NotePaneModel::default(),
             NotePaneModel {
-                state: NotePaneState::NoNote,
+                state: NotePaneState::Empty,
                 history: vec![]
             }
         );
@@ -290,17 +287,14 @@ mod tests {
 
         let note = MockRepository::new().insert_note("note", "This is a note");
 
-        assert_eq!(model.state, NotePaneState::NoNote);
+        assert_eq!(model.state, NotePaneState::Empty);
         let (model, _) = model.update(NotePaneMessage::PushNote(note.clone()));
-        assert_eq!(model.state, NotePaneState::WithNote(NoteContext::new(note)));
+        assert_eq!(model.state, NotePaneState::With(NoteContext::new(note)));
 
         let new_note = MockRepository::new().insert_note("note2", "This is another note");
 
         let (model, _) = model.update(NotePaneMessage::PushNote(new_note.clone()));
-        assert_eq!(
-            model.state,
-            NotePaneState::WithNote(NoteContext::new(new_note))
-        );
+        assert_eq!(model.state, NotePaneState::With(NoteContext::new(new_note)));
     }
 
     #[test]
@@ -573,17 +567,17 @@ mod tests {
         let (model, _) = model.update(NotePaneMessage::PushNote(note_c.clone()));
 
         let (model, command) = model.update(NotePaneMessage::PopNote);
-        assert_eq!(model.state, NotePaneState::LoadingNote(note_b.key.clone()));
+        assert_eq!(model.state, NotePaneState::Loading(note_b.key.clone()));
         assert_eq!(command, Command::ServeNote(note_b.key.clone()));
 
         let (model, _) = model.update(NotePaneMessage::UpdateNote(note_b));
         let (model, command) = model.update(NotePaneMessage::PopNote);
-        assert_eq!(model.state, NotePaneState::LoadingNote(note_a.key.clone()));
+        assert_eq!(model.state, NotePaneState::Loading(note_a.key.clone()));
         assert_eq!(command, Command::ServeNote(note_a.key.clone()));
 
         let (model, _) = model.update(NotePaneMessage::UpdateNote(note_a));
         let (model, command) = model.update(NotePaneMessage::PopNote);
-        assert_eq!(model.state, NotePaneState::NoNote);
+        assert_eq!(model.state, NotePaneState::Empty);
         assert_eq!(command, Command::None);
     }
 }

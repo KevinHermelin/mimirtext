@@ -41,7 +41,7 @@ impl MarkdownDocument {
             })
             .filter_map(|(link_type, dest_url)| match link_type {
                 LinkType::WikiLink { .. } => Some(LinkTarget::Note(dest_url)),
-                LinkType::Inline { .. } => Some(LinkTarget::External(dest_url)),
+                LinkType::Inline => Some(LinkTarget::External(dest_url)),
                 _ => None,
             })
             .enumerate()

@@ -73,7 +73,7 @@ impl MarkdownDocument {
                 }
                 Event::Start(tag) => match tag {
                     Tag::Heading { .. } => {
-                        if lines.len() != 0 || line.len() != 0 {
+                        if !lines.is_empty() || !line.is_empty() {
                             flush_line(&mut lines, &mut line);
                         }
                         inside_heading = true;

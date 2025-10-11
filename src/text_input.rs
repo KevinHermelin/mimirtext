@@ -97,7 +97,7 @@ impl TextInput {
     pub fn cursor_column(&self) -> usize {
         let current_line = self.current[..self.cursor_pos]
             .split('\n')
-            .last()
+            .next_back()
             .expect("should have at least one line");
 
         assert!(
@@ -186,7 +186,7 @@ impl TextInput {
                         .iter()
                         .position(|&b| b == b'\n')
                         .map(|i| next_start + i)
-                        .unwrap_or(self.current.as_bytes().len());
+                        .unwrap_or(self.current.len());
 
                     self.cursor_pos = next_start;
                     while self.cursor_column() < self.desired_column
@@ -313,8 +313,8 @@ mod tests {
             2 + 2 + 3
         );
 
-        let mut config = TextInputConfig::default();
-        config.tab_columns = 4;
+        let config = TextInputConfig { tab_columns: 4 };
+
         assert_eq!(
             TextInput::new()
                 .with_config(config)

@@ -32,19 +32,18 @@ impl KeyHandler<Message> for Model {
             return message;
         }
 
-        return Message::NotePane(self.note_pane.handle_key_event(key_event));
+        Message::NotePane(self.note_pane.handle_key_event(key_event))
     }
 }
 
 impl KeyHandler<NotePaneMessage> for NotePaneModel {
     fn handle_key_event(&self, key_event: KeyEvent) -> NotePaneMessage {
         // Common for all modes.
-        match (key_event.code, key_event.modifiers) {
-            (KeyCode::Esc, _) => return NotePaneMessage::StopEdit,
-            _ => {}
+        if let (KeyCode::Esc, _) = (key_event.code, key_event.modifiers) {
+            return NotePaneMessage::StopEdit;
         };
 
-        if let NotePaneState::WithNote(context) = &self.state {
+        if let NotePaneState::With(context) = &self.state {
             if let Some(editor) = &context.editor {
                 return NotePaneMessage::Input(editor.handle_key_event(key_event));
             }

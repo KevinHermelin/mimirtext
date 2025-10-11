@@ -78,14 +78,14 @@ impl App {
             assert_eq!(command, Command::None);
         }
 
-        return App {
-            model: model,
+        App {
+            model,
             repository,
             error_message: None,
-        };
+        }
     }
     fn from_path(path: &Path) -> io::Result<Self> {
-        let (repo, note) = FolderRepository::open_path(&path)?;
+        let (repo, note) = FolderRepository::open_path(path)?;
 
         Ok(App::new(Box::new(repo), note))
     }
@@ -148,7 +148,7 @@ impl App {
                     assert_eq!(repo_id, self.repository.id());
                     self.repository.commit_note(note)?;
 
-                    let note = self.repository.note(&note_id)?;
+                    let note = self.repository.note(note_id)?;
                     message = Message::NotePane(NotePaneMessage::UpdateNote(note));
                 }
                 Command::RequestLinkCompletion(range, text) => {
@@ -175,12 +175,12 @@ impl App {
         }
     }
     fn handle_key_event(&mut self, key_event: KeyEvent) -> Message {
-        if let Some(_) = self.error_message {
+        if self.error_message.is_some() {
             self.error_message = None;
             return Message::None;
         }
 
-        return self.model.handle_key_event(key_event);
+        self.model.handle_key_event(key_event)
     }
     fn draw(&self, frame: &mut Frame) {
         frame.render_widget(Clear, frame.area());
@@ -226,7 +226,7 @@ impl WidgetWithCursor for Model {
 
         if let Some(search_window) = &self.search_window {
             let area = center(area, Constraint::Percentage(80), Constraint::Percentage(40));
-            Clear::default().render(area, buf);
+            Clear.render(area, buf);
             return search_window.render_with_cursor(area, buf);
         }
         cursor

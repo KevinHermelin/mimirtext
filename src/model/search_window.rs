@@ -89,8 +89,10 @@ mod tests {
 
     #[test]
     fn test_input() {
-        let mut model = SearchWindowModel::default();
-        model.selection_index = 2;
+        let model = SearchWindowModel {
+            selection_index: 2,
+            ..Default::default()
+        };
 
         let (model, command) = model.update(SearchWindowMessage::Input(InputOperation::Insert(
             String::from("Hello Word?"),

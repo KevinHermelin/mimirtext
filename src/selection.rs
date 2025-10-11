@@ -14,7 +14,7 @@ impl<T> NonEmptySelection<T> {
     ///
     /// Returns None if `items` contains no elements.
     pub fn new(items: Vec<T>) -> Option<Self> {
-        if items.len() == 0 {
+        if items.is_empty() {
             return None;
         }
         Some(Self { items, selected: 0 })

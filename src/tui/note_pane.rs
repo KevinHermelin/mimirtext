@@ -37,7 +37,7 @@ impl NotePaneModel {
     fn render_block(&self, area: Rect, buf: &mut Buffer) -> Rect {
         let mut block = Block::bordered().border_set(border::THICK);
 
-        if let NotePaneState::WithNote(context) = &self.state {
+        if let NotePaneState::With(context) = &self.state {
             block = block.title_bottom(
                 Line::from(format!(" {} ", context.note.title))
                     .bold()
@@ -63,8 +63,8 @@ impl NotePaneModel {
         // Tabs seem to render weirdly in the Ratatui.
         let tab_columns = self.editor_config().tab_columns;
         assert!(tab_columns >= 1);
-        let text = text.replace('\t', &(String::from("⇥") + &" ".repeat(tab_columns - 1)));
-        text
+
+        text.replace('\t', &(String::from("⇥") + &" ".repeat(tab_columns - 1)))
     }
 }
 
@@ -72,13 +72,11 @@ impl WidgetWithCursor for NotePaneModel {
     fn render_with_cursor(&self, area: Rect, buf: &mut Buffer) -> Option<Position> {
         let area = self.render_block(area, buf);
         match &self.state {
-            NotePaneState::NoNote => {
+            NotePaneState::Empty => {
                 NonIdealState::new("Mimir", "Press <CTRL+P> to open a note").render(area, buf)
             }
-            NotePaneState::LoadingNote(_) => {
-                NonIdealState::new("Loading note", "").render(area, buf)
-            }
-            NotePaneState::WithNote(context) => {
+            NotePaneState::Loading(_) => NonIdealState::new("Loading note", "").render(area, buf),
+            NotePaneState::With(context) => {
                 let document = context.document();
 
                 if let Some(editor) = &context.editor {
@@ -199,8 +197,7 @@ mod tests {
 
     #[test]
     fn test_no_note() {
-        let mut model = NotePaneModel::default();
-        model.state = NotePaneState::NoNote;
+        let model = NotePaneModel::default();
 
         let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
         terminal
