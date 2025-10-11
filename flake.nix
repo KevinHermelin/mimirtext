@@ -17,7 +17,7 @@
         };
 
         devShells.default = pkgs.mkShell {
-          buildInputs = [ pkgs.rustc pkgs.cargo pkgs.rustfmt pkgs.cargo-insta ];
+          buildInputs = [ pkgs.rustc pkgs.cargo pkgs.rustfmt pkgs.cargo-insta pkgs.clippy ];
           RUST_SRC_PATH = "${pkgs.rust.packages.stable.rustPlatform.rustLibSrc}";
         };
       });
