@@ -104,7 +104,7 @@ impl WidgetWithCursor for NotePaneModel {
                         let mut completion_area = Rect {
                             x: cursor.x,
                             y: cursor.y + 1,
-                            width: 20,
+                            width: 40,
                             height: 5,
                         };
 
@@ -117,7 +117,12 @@ impl WidgetWithCursor for NotePaneModel {
                                 (completion_area.width as usize).saturating_sub(text.width());
 
                             let text = text.clone() + &" ".repeat(fill_width);
-                            let line = Line::from(text).bg(Color::DarkGray);
+                            let mut line = Line::from(text).bg(Color::DarkGray);
+
+                            if completions.selected() == completion {
+                                line = line.reversed();
+                            }
+
                             lines.push(line);
                         }
 

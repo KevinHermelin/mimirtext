@@ -77,6 +77,15 @@ impl KeyHandler<SearchWindowMessage> for SearchWindowModel {
 
 impl KeyHandler<InputOperation> for TextInput {
     fn handle_key_event(&self, key_event: KeyEvent) -> InputOperation {
+        if self.completions().is_some() {
+            match key_event.code {
+                KeyCode::Enter => return InputOperation::Complete,
+                KeyCode::Up => return InputOperation::PreviousCompletion,
+                KeyCode::Down => return InputOperation::NextCompletion,
+                _ => {}
+            };
+        }
+
         match (key_event.code, key_event.modifiers) {
             (KeyCode::Backspace, _) => InputOperation::Backspace,
             (KeyCode::Left, _) => InputOperation::Left,

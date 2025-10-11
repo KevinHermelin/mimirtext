@@ -198,9 +198,9 @@ impl Update<NotePaneMessage> for NotePaneModel {
                     // up until the cursor. This means that we should trigger autocomplete.
                     if search_text.contains("[[") {
                         let search_text = search_text.split("[[").last().unwrap();
-                        let index = editor.text().rfind("[[").unwrap();
+                        let link_start_index = editor.before_cursor().rfind("[[").unwrap();
                         command = Command::RequestLinkCompletion(
-                            index..editor.cursor_pos(),
+                            link_start_index..editor.cursor_pos(),
                             search_text.to_owned(),
                         )
                     }
@@ -496,7 +496,8 @@ mod tests {
 
     #[test]
     fn test_link_completions() {
-        let note = MockRepository::new().insert_note("note.md", "");
+        let note = MockRepository::new()
+            .insert_note("note.md", "\nNote where we want to add a [[Link|link]].");
 
         let model = NotePaneModel::default();
         let (model, _) = model.update(NotePaneMessage::PushNote(note));
