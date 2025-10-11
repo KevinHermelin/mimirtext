@@ -7,7 +7,7 @@ use ratatui::{
     widgets::{Block, Paragraph, Widget},
 };
 
-use crate::{model::SearchWindowModel, repository::NoteKey, tui::WidgetWithCursor};
+use crate::{model::search_window::SearchWindowModel, repository::NoteKey, tui::WidgetWithCursor};
 
 impl WidgetWithCursor for SearchWindowModel {
     fn render_with_cursor(&self, area: Rect, buf: &mut Buffer) -> Option<Position> {
@@ -62,7 +62,7 @@ mod tests {
     use ratatui::{Terminal, backend::TestBackend, layout::Position};
 
     use crate::{
-        model::{SearchWindowMessage, SearchWindowModel, Update},
+        model::{Update, search_window::SearchWindowMessage, search_window::SearchWindowModel},
         repository::{MockRepository, Repository, SearchResult},
         text_input::TextInput,
         tui::WidgetWithCursor,

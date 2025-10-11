@@ -2,8 +2,9 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::{
     model::{
-        Message, Model, NotePaneMessage, NotePaneModel, NotePaneState, SearchWindowMessage,
-        SearchWindowModel,
+        Message, Model,
+        note_pane::{NotePaneMessage, NotePaneModel, NotePaneState},
+        search_window::{SearchWindowMessage, SearchWindowModel},
     },
     text_input::{InputOperation, TextInput},
 };

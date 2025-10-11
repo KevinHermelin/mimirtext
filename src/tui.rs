@@ -28,7 +28,10 @@ use std::{
 
 use crate::{
     markdown::LinkTarget,
-    model::{Command, Message, Model, NotePaneMessage, RunningState, SearchWindowMessage, Update},
+    model::{
+        Command, Message, Model, RunningState, Update, note_pane::NotePaneMessage,
+        search_window::SearchWindowMessage,
+    },
     repository::{FolderRepository, NoteKey, NoteSnapshot, Repository},
     text_input::Completion,
     tui::{input::KeyHandler, utils::center},

@@ -9,7 +9,7 @@ use ratatui::{
 use unicode_width::UnicodeWidthStr;
 
 use crate::{
-    model::{Document, NotePaneModel, NotePaneState, ViewMode},
+    model::note_pane::{Document, NotePaneModel, NotePaneState, ViewMode},
     tui::{WidgetWithCursor, markdown_view::MarkdownView, utils::NonIdealState},
 };
 
@@ -177,7 +177,7 @@ impl WidgetWithCursor for NotePaneModel {
 mod tests {
     use super::*;
     use crate::{
-        model::{NotePaneMessage, Update},
+        model::{Update, note_pane::NotePaneMessage},
         repository::{MockRepository, Repository},
         text_input::{Completion, InputOperation},
     };
