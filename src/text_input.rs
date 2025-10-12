@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use unicode_segmentation::GraphemeCursor;
+use unicode_segmentation::{GraphemeCursor, UnicodeSegmentation};
 use unicode_width::UnicodeWidthStr;
 
 use crate::selection::NonEmptySelection;
@@ -40,11 +40,6 @@ pub struct TextInput {
     desired_column: usize,
     completions: Option<NonEmptySelection<Completion>>,
     config: TextInputConfig,
-}
-
-enum Movement {
-    NextBoundary,
-    PreviousBoundary,
 }
 
 impl From<&str> for TextInput {
@@ -109,16 +104,35 @@ impl TextInput {
     pub fn before_cursor(&self) -> &str {
         &self.current[..self.cursor_pos]
     }
-    fn move_cursor(&self, movement: Movement) -> Option<usize> {
+    fn cursor_moved(&self, direction: Direction, unit: Unit) -> Option<usize> {
         let mut cursor = self.cursor();
         let chunk = &self.current;
         let chunk_start = 0;
 
-        match movement {
-            Movement::NextBoundary => cursor.next_boundary(chunk, chunk_start),
-            Movement::PreviousBoundary => cursor.prev_boundary(chunk, chunk_start),
+        match (direction, unit) {
+            (Direction::Forward, Unit::Char) => cursor
+                .next_boundary(chunk, chunk_start)
+                .expect("chunk should be complete"),
+            (Direction::Backward, Unit::Char) => cursor
+                .prev_boundary(chunk, chunk_start)
+                .expect("chunk should be complete"),
+            (Direction::Forward, Unit::Word) => {
+                let mut words = self
+                    .current
+                    .unicode_word_indices()
+                    .skip_while(|(i, _)| *i <= self.cursor_pos);
+
+                words.next().map(|(i, _)| i).or(Some(self.current.len()))
+            }
+            (Direction::Backward, Unit::Word) => {
+                let words = self
+                    .current
+                    .unicode_word_indices()
+                    .take_while(|(i, _)| *i < self.cursor_pos);
+
+                words.last().map(|(i, _)| i).or(Some(0))
+            }
         }
-        .expect("chunk should be complete")
     }
     pub fn apply(mut self, operation: InputOperation) -> Self {
         // This ensures that we are not left with any completions on the old buffer,
@@ -134,20 +148,20 @@ impl TextInput {
             }
             InputOperation::Backspace => {
                 let current_pos = self.cursor().cur_cursor();
-                if let Some(new_pos) = self.move_cursor(Movement::PreviousBoundary) {
+                if let Some(new_pos) = self.cursor_moved(Direction::Backward, Unit::Char) {
                     self.cursor_pos = new_pos;
                     self.current.drain(new_pos..current_pos);
                     self.desired_column = self.cursor_column();
                 }
             }
-            InputOperation::Left => {
-                if let Some(new_pos) = self.move_cursor(Movement::PreviousBoundary) {
+            InputOperation::Left(unit) => {
+                if let Some(new_pos) = self.cursor_moved(Direction::Backward, unit) {
                     self.cursor_pos = new_pos;
                     self.desired_column = self.cursor_column();
                 }
             }
-            InputOperation::Right => {
-                if let Some(new_pos) = self.move_cursor(Movement::NextBoundary) {
+            InputOperation::Right(unit) => {
+                if let Some(new_pos) = self.cursor_moved(Direction::Forward, unit) {
                     self.cursor_pos = new_pos;
                     self.desired_column = self.cursor_column();
                 }
@@ -166,7 +180,7 @@ impl TextInput {
 
                     self.cursor_pos = prev_start;
                     while self.cursor_column() < self.desired_column && self.cursor_pos < prev_end {
-                        if let Some(p) = self.move_cursor(Movement::NextBoundary) {
+                        if let Some(p) = self.cursor_moved(Direction::Forward, Unit::Char) {
                             self.cursor_pos = p
                         } else {
                             break;
@@ -192,7 +206,7 @@ impl TextInput {
                     while self.cursor_column() < self.desired_column
                         && self.cursor_pos < next_line_end
                     {
-                        if let Some(p) = self.move_cursor(Movement::NextBoundary) {
+                        if let Some(p) = self.cursor_moved(Direction::Forward, Unit::Char) {
                             self.cursor_pos = p
                         } else {
                             break;
@@ -245,14 +259,25 @@ impl TextInput {
 pub enum InputOperation {
     Insert(String),
     Backspace,
-    Left,
-    Right,
+    Left(Unit),
+    Right(Unit),
     Up,
     Down,
     None,
     NextCompletion,
     PreviousCompletion,
     Complete,
+}
+
+#[derive(Clone)]
+pub enum Unit {
+    Char,
+    Word,
+}
+
+enum Direction {
+    Forward,
+    Backward,
 }
 
 #[cfg(test)]
@@ -294,7 +319,7 @@ mod tests {
         assert_eq!(
             TextInput::new()
                 .apply(InputOperation::Insert(String::from("åäö")))
-                .apply(InputOperation::Left)
+                .apply(InputOperation::Left(Unit::Char))
                 .cursor_column(),
             2
         );
@@ -342,7 +367,7 @@ mod tests {
         assert_eq!(
             TextInput::new()
                 .apply(InputOperation::Insert(String::from("Test\n")))
-                .apply(InputOperation::Left)
+                .apply(InputOperation::Left(Unit::Char))
                 .cursor_row(),
             0
         );
@@ -362,7 +387,7 @@ mod tests {
                 .apply(InputOperation::Insert(String::from(
                     "Test with\nmultiple\nlines"
                 )))
-                .apply(InputOperation::Left)
+                .apply(InputOperation::Left(Unit::Char))
                 .before_cursor(),
             "Test with\nmultiple\nline"
         );
@@ -373,7 +398,7 @@ mod tests {
                     "Test with\nmultiple\nlines"
                 )))
                 .apply(InputOperation::Up)
-                .apply(InputOperation::Left)
+                .apply(InputOperation::Left(Unit::Char))
                 .before_cursor(),
             "Test with\nmult"
         );
@@ -455,28 +480,56 @@ mod tests {
     fn test_apply_movement() {
         let input = TextInput::new()
             .apply(InputOperation::Insert(String::from("ab 👨‍👩‍👧‍👦 cd")))
-            .apply(InputOperation::Left)
-            .apply(InputOperation::Left)
-            .apply(InputOperation::Left)
-            .apply(InputOperation::Left);
+            .apply(InputOperation::Left(Unit::Char))
+            .apply(InputOperation::Left(Unit::Char))
+            .apply(InputOperation::Left(Unit::Char))
+            .apply(InputOperation::Left(Unit::Char));
         assert_eq!(input.cursor_pos(), "ab ".len());
 
         let input = input
-            .apply(InputOperation::Right)
-            .apply(InputOperation::Right)
-            .apply(InputOperation::Right);
+            .apply(InputOperation::Right(Unit::Char))
+            .apply(InputOperation::Right(Unit::Char))
+            .apply(InputOperation::Right(Unit::Char));
         assert_eq!(input.cursor_pos(), "ab 👨‍👩‍👧‍👦 c".len());
 
         let input = TextInput::new()
             .apply(InputOperation::Insert(String::from("a")))
-            .apply(InputOperation::Left)
-            .apply(InputOperation::Left);
+            .apply(InputOperation::Left(Unit::Char))
+            .apply(InputOperation::Left(Unit::Char));
         assert_eq!(input.cursor_pos(), 0);
 
         let input = TextInput::new()
             .apply(InputOperation::Insert(String::from("a")))
-            .apply(InputOperation::Right);
+            .apply(InputOperation::Right(Unit::Char));
         assert_eq!(input.cursor_pos(), "a".len());
+
+        let input = TextInput::new()
+            .apply(InputOperation::Insert(String::from("Hello World")))
+            .apply(InputOperation::Left(Unit::Word));
+        assert_eq!(input.cursor_pos(), "Hello ".len());
+
+        let input = input.apply(InputOperation::Left(Unit::Word));
+        assert_eq!(input.cursor_pos(), "".len());
+
+        let input = input.apply(InputOperation::Right(Unit::Word));
+        assert_eq!(input.cursor_pos(), "Hello ".len());
+
+        let input = input.apply(InputOperation::Right(Unit::Word));
+        assert_eq!(input.cursor_pos(), "Hello World".len());
+
+        let input = TextInput::new()
+            .apply(InputOperation::Insert(String::from("# Hello! ")))
+            .apply(InputOperation::Left(Unit::Word));
+        assert_eq!(input.cursor_pos(), "# ".len());
+
+        let input = input.apply(InputOperation::Left(Unit::Word));
+        assert_eq!(input.cursor_pos(), "".len());
+
+        let input = input.apply(InputOperation::Right(Unit::Word));
+        assert_eq!(input.cursor_pos(), "# ".len());
+
+        let input = input.apply(InputOperation::Right(Unit::Word));
+        assert_eq!(input.cursor_pos(), "# Hello! ".len());
     }
 
     #[test]
@@ -491,8 +544,8 @@ mod tests {
         assert_eq!(input.cursor_row(), 0);
 
         let input = input
-            .apply(InputOperation::Right)
-            .apply(InputOperation::Right);
+            .apply(InputOperation::Right(Unit::Char))
+            .apply(InputOperation::Right(Unit::Char));
         assert_eq!(input.cursor_column(), 5);
         assert_eq!(input.cursor_row(), 0);
 
@@ -513,11 +566,11 @@ mod tests {
         assert_eq!(input.cursor_row(), 1);
 
         let input = input
-            .apply(InputOperation::Left)
-            .apply(InputOperation::Left)
-            .apply(InputOperation::Left)
-            .apply(InputOperation::Left)
-            .apply(InputOperation::Left)
+            .apply(InputOperation::Left(Unit::Char))
+            .apply(InputOperation::Left(Unit::Char))
+            .apply(InputOperation::Left(Unit::Char))
+            .apply(InputOperation::Left(Unit::Char))
+            .apply(InputOperation::Left(Unit::Char))
             .apply(InputOperation::Down);
         assert_eq!(input.cursor_column(), 0);
         assert_eq!(input.cursor_row(), 2);
@@ -532,7 +585,7 @@ mod tests {
     fn test_completions() {
         let input = TextInput::new()
             .apply(InputOperation::Insert(String::from("Start with a [[.")))
-            .apply(InputOperation::Left);
+            .apply(InputOperation::Left(Unit::Char));
         assert_eq!(*input.completions(), None);
 
         let completions = vec![
@@ -564,8 +617,8 @@ mod tests {
             .provide_completions(vec![Completion::note_link(0..1, "Note")]);
 
         for operation in [
-            InputOperation::Left,
-            InputOperation::Right,
+            InputOperation::Left(Unit::Char),
+            InputOperation::Right(Unit::Char),
             InputOperation::Up,
             InputOperation::Down,
             InputOperation::Insert(String::from("test")),

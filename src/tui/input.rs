@@ -6,7 +6,7 @@ use crate::{
         note_pane::{NotePaneMessage, NotePaneModel, NotePaneState},
         search_window::{SearchWindowMessage, SearchWindowModel},
     },
-    text_input::{InputOperation, TextInput},
+    text_input::{InputOperation, TextInput, Unit},
 };
 
 pub trait KeyHandler<Message> {
@@ -87,8 +87,10 @@ impl KeyHandler<InputOperation> for TextInput {
 
         match (key_event.code, key_event.modifiers) {
             (KeyCode::Backspace, _) => InputOperation::Backspace,
-            (KeyCode::Left, _) => InputOperation::Left,
-            (KeyCode::Right, _) => InputOperation::Right,
+            (KeyCode::Left, KeyModifiers::NONE) => InputOperation::Left(Unit::Char),
+            (KeyCode::Left, KeyModifiers::CONTROL) => InputOperation::Left(Unit::Word),
+            (KeyCode::Right, KeyModifiers::NONE) => InputOperation::Right(Unit::Char),
+            (KeyCode::Right, KeyModifiers::CONTROL) => InputOperation::Right(Unit::Word),
             (KeyCode::Up, _) => InputOperation::Up,
             (KeyCode::Down, _) => InputOperation::Down,
             (KeyCode::Enter, _) => InputOperation::Insert(String::from("\n")),

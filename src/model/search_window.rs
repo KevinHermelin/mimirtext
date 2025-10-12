@@ -71,7 +71,10 @@ impl Update<SearchWindowMessage> for SearchWindowModel {
 
 #[cfg(test)]
 mod tests {
-    use crate::repository::{MockRepository, Repository};
+    use crate::{
+        repository::{MockRepository, Repository},
+        text_input::Unit,
+    };
 
     use super::*;
 
@@ -103,7 +106,7 @@ mod tests {
         assert_eq!(model.selection_index, 0);
 
         let (model, _) = model.update(SearchWindowMessage::Input(InputOperation::Backspace));
-        let (model, _) = model.update(SearchWindowMessage::Input(InputOperation::Left));
+        let (model, _) = model.update(SearchWindowMessage::Input(InputOperation::Left(Unit::Char)));
         let (model, command) = model.update(SearchWindowMessage::Input(InputOperation::Insert(
             String::from("l"),
         )));
