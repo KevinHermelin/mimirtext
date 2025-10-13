@@ -1,7 +1,7 @@
 use ratatui::{
     buffer::Buffer,
     layout::{Offset, Position, Rect},
-    style::{Color, Stylize},
+    style::{Color, Modifier, Style, Stylize},
     symbols::border,
     text::Line,
     widgets::{Block, Paragraph, Widget, Wrap},
@@ -38,11 +38,15 @@ impl NotePaneModel {
         let mut block = Block::bordered().border_set(border::THICK);
 
         if let NotePaneState::With(context) = &self.state {
-            block = block.title_bottom(
-                Line::from(format!(" {} ", context.note.title))
-                    .bold()
-                    .left_aligned(),
-            )
+            let mut title_text = context.note.title.clone();
+            let mut title_style = Style::new().add_modifier(Modifier::BOLD);
+            if context.modified() {
+                title_text.push('*');
+                title_style = title_style.add_modifier(Modifier::ITALIC);
+            }
+
+            block = block
+                .title_bottom(Line::styled(format!(" {} ", title_text), title_style).left_aligned())
         }
 
         let mode = self.view_mode();
@@ -233,6 +237,26 @@ mod tests {
 
         let (model, _) = NotePaneModel::default().update(NotePaneMessage::PushNote(note));
         let (model, _) = model.update(NotePaneMessage::StartEdit);
+
+        let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
+        terminal
+            .draw(|frame| {
+                model.render_with_cursor(frame.area(), frame.buffer_mut());
+            })
+            .unwrap();
+        assert_snapshot!(terminal.backend());
+    }
+
+    #[test]
+    fn test_editing_note_modified() {
+        let note = MockRepository::new().insert_note("Note name.md", "We are editing this note");
+
+        let (model, _) = NotePaneModel::default().update(NotePaneMessage::PushNote(note));
+        let (model, _) = model.update(NotePaneMessage::StartEdit);
+        let (model, _) = model.update(NotePaneMessage::Input(InputOperation::Down));
+        let (model, _) = model.update(NotePaneMessage::Input(InputOperation::Insert(
+            String::from(" and adding some text. \nNote name should have an \"*\" appended to it."),
+        )));
 
         let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
         terminal

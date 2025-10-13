@@ -5,11 +5,13 @@ use crate::{
     text_input::{Completion, InputOperation, TextInput, TextInputConfig},
 };
 
+/// A struct representing the state of a note opened for reading and optionally writing.
 #[derive(Clone, Debug, PartialEq)]
 pub struct NoteContext {
     pub note: NoteSnapshot,
     pub scroll_lines: isize,
     pub link_selection_index: isize,
+    /// Optionally, a `TextInput` instance holding the edited state of this note.
     pub editor: Option<TextInput>,
 }
 
@@ -20,6 +22,9 @@ pub enum Document {
 }
 
 impl NoteContext {
+    /// Creates a `NoteContext` containing a note snapshot.
+    ///
+    /// The context is initialized without an editor.
     pub fn new(note: NoteSnapshot) -> Self {
         Self {
             note,
@@ -27,6 +32,13 @@ impl NoteContext {
             link_selection_index: 0,
             editor: None,
         }
+    }
+
+    /// Returns `true` if the editor is active and its text does not match the note snapshot.
+    pub fn modified(&self) -> bool {
+        self.editor
+            .as_ref()
+            .is_some_and(|editor| editor.text() != self.note.body)
     }
 
     pub fn document(&self) -> Document {
@@ -460,6 +472,7 @@ mod tests {
         let (model, _) = NotePaneModel::default().update(NotePaneMessage::PushNote(note.clone()));
         assert_eq!(model.view_mode(), ViewMode::Browsing);
         assert_eq!(model.state.context().unwrap().editor, None);
+        assert!(!model.state.context().unwrap().modified());
 
         let (model, _) = model.update(NotePaneMessage::StartEdit);
         assert_eq!(model.view_mode(), ViewMode::Edit);
@@ -467,6 +480,7 @@ mod tests {
             model.state.context().unwrap().editor,
             Some(TextInput::new_with("This is a note.", 0))
         );
+        assert!(!model.state.context().unwrap().modified());
 
         let (model, _) = model.update(NotePaneMessage::Input(InputOperation::Insert(
             String::from("This is an edit.\n"),
@@ -478,6 +492,7 @@ mod tests {
                 "This is an edit.\n".len()
             ))
         );
+        assert!(model.state.context().unwrap().modified());
 
         let (model, command) = model.update(NotePaneMessage::StopEdit);
         assert_eq!(model.view_mode(), ViewMode::Browsing);

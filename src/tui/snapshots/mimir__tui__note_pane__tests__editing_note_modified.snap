@@ -3,8 +3,8 @@ source: src/tui/note_pane.rs
 expression: terminal.backend()
 ---
 "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓"
-"┃[[                                                                            ┃"
-"┃  note                                                                        ┃"
+"┃We are editing this note and adding some text.                                ┃"
+"┃Note name should have an "*" appended to it.                                  ┃"
 "┃                                                                              ┃"
 "┃                                                                              ┃"
 "┃                                                                              ┃"
