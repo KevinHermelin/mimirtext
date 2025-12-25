@@ -27,6 +27,7 @@ use std::{
 };
 
 use crate::{
+    graph::RepositoryGraph,
     markdown::LinkTarget,
     model::{
         Command, Message, Model, RunningState, Update, note_pane::NotePaneMessage,
@@ -90,6 +91,15 @@ impl App {
         Ok(App::new(Box::new(repo), note))
     }
     fn run(&mut self, terminal: &mut Terminal<impl Backend>) -> Result<()> {
+        let mut graph = RepositoryGraph::new()?;
+        for key in self.repository.notes()? {
+            let NoteKey(_, id) = key;
+
+            if let Ok(note) = self.repository.note(&id) {
+                graph = graph.register_note(&note)?;
+            }
+        }
+
         let mut message = Message::None;
         while self.model.running_state != RunningState::Done {
             terminal.draw(|frame| self.draw(frame))?;
@@ -135,7 +145,7 @@ impl App {
                     message = Message::NotePane(NotePaneMessage::UpdateNote(note));
                 }
                 Command::SearchQuery(query) => {
-                    let results = self.repository.search(&query)?;
+                    let results = graph.search(&query)?;
                     message = Message::SearchWindow(SearchWindowMessage::UpdateResults(results));
                 }
                 Command::OpenNote(key) => {
@@ -152,7 +162,7 @@ impl App {
                     message = Message::NotePane(NotePaneMessage::UpdateNote(note));
                 }
                 Command::RequestLinkCompletion(range, text) => {
-                    let results = self.repository.search(&text)?;
+                    let results = graph.search(&text)?;
                     let completions = results
                         .iter()
                         .map(|result| result.key.1.clone().split(".md").next().unwrap().to_owned())

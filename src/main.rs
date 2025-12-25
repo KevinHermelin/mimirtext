@@ -1,3 +1,4 @@
+mod graph;
 mod markdown;
 mod model;
 mod repository;

@@ -62,8 +62,12 @@ mod tests {
     use ratatui::{Terminal, backend::TestBackend, layout::Position};
 
     use crate::{
-        model::{Update, search_window::SearchWindowMessage, search_window::SearchWindowModel},
-        repository::{MockRepository, Repository, SearchResult},
+        graph::SearchResult,
+        model::{
+            Update,
+            search_window::{SearchWindowMessage, SearchWindowModel},
+        },
+        repository::{MockRepository, Repository},
         text_input::TextInput,
         tui::WidgetWithCursor,
     };

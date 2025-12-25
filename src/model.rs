@@ -100,7 +100,10 @@ impl Update<Message> for Model {
 
 #[cfg(test)]
 mod tests {
-    use crate::repository::{MockRepository, Repository, SearchResult};
+    use crate::{
+        graph::SearchResult,
+        repository::{MockRepository, Repository},
+    };
 
     use super::*;
 

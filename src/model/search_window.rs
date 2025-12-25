@@ -1,6 +1,6 @@
 use crate::{
+    graph::SearchResult,
     model::{ClampAdd, Command, Update},
-    repository::SearchResult,
     text_input::{InputOperation, TextInput},
 };
 

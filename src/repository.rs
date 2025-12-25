@@ -1,8 +1,7 @@
-use rapidfuzz::distance::jaro_winkler;
 #[cfg(test)]
 use std::collections::HashMap;
 use std::{
-    fs::{self},
+    fs::{self, DirEntry},
     io::{self, ErrorKind, Write},
     path::{Path, PathBuf},
 };
@@ -49,18 +48,6 @@ impl NoteSnapshot {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct SearchResult {
-    pub key: NoteKey,
-    distance: f64,
-}
-
-impl SearchResult {
-    pub fn new(key: NoteKey, distance: f64) -> Self {
-        SearchResult { key, distance }
-    }
-}
-
 pub trait Repository {
     fn id(&self) -> &str;
     fn resolve_reference(&self, reference: &str) -> String;
@@ -70,26 +57,6 @@ pub trait Repository {
     }
     fn notes(&self) -> io::Result<Vec<NoteKey>>;
     fn commit_note(&mut self, note: NoteSnapshot) -> io::Result<()>;
-    fn search(&self, query: &str) -> io::Result<Vec<SearchResult>> {
-        let notes = self.notes()?;
-
-        let scorer = jaro_winkler::BatchComparator::new(query.to_lowercase().chars());
-
-        let mut notes: Vec<SearchResult> = notes
-            .iter()
-            .map(|key| {
-                SearchResult::new(key.clone(), scorer.distance(key.1.to_lowercase().chars()))
-            })
-            .collect();
-
-        if query.is_empty() {
-            notes.sort_by_key(|result| result.key.1.clone());
-        } else {
-            notes.sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap());
-        }
-
-        Ok(notes)
-    }
     fn edit_externally(&mut self, id: &str) -> io::Result<()>;
 }
 
@@ -179,22 +146,50 @@ impl Repository for FolderRepository {
         edit::edit_file(self.get_note_path(id))
     }
 
+    /// Returns all note keys in this repository.
+    ///
+    /// All files in this folder are considered notes, subdirectories
+    /// excluded.
+    ///
+    /// The order is platform and filesystem dependent, consistent with `fs::read_dir`.
+    ///
+    /// Returns an `io::Error` if any file could not be read. Notes need UTF-8 note keys,
+    /// which is determined from the file name. If this fails for any file, the function will
+    /// return an error.
     fn notes(&self) -> io::Result<Vec<NoteKey>> {
         let root = &self.root.to_owned();
 
-        // There are multiple reasons why a note can not be read.
-        // This implementation will simply filter out all such notes.
-        // One can argue that it will not matter as long as this function
-        // is only used for searching.
+        let files: io::Result<Vec<DirEntry>> =
+            fs::read_dir(root)?.try_fold(vec![], |mut file_list, entry| {
+                let entry = entry?;
+                if entry.file_type()?.is_file() {
+                    file_list.push(entry);
+                }
+                Ok(file_list)
+            });
 
-        Ok(fs::read_dir(root)?
-            .filter_map(|res| res.ok())
-            .filter_map(|entry| {
+        let notes: io::Result<Vec<NoteKey>> = files?
+            .iter()
+            .map(|entry| {
                 let path = entry.path();
-                let rel = path.strip_prefix(root).ok()?;
-                rel.to_str().map(|id| self.note_key(id))
+                let rel = path
+                    .strip_prefix(root)
+                    .expect("should be able to strip prefix from path");
+
+                let id = rel.to_str();
+
+                if let Some(id) = id {
+                    Ok(self.note_key(id))
+                } else {
+                    Err(io::Error::new(
+                        io::ErrorKind::Other,
+                        "Could not get UTF-8 name of file",
+                    ))
+                }
             })
-            .collect())
+            .collect();
+
+        notes
     }
 
     fn commit_note(&mut self, note: NoteSnapshot) -> io::Result<()> {
@@ -449,55 +444,24 @@ mod tests {
     }
 
     #[test]
-    fn test_folder_repository_search() -> io::Result<()> {
+    fn test_folder_repository_notes() -> io::Result<()> {
         let (_tempdir, repo_path) = create_temp_repo_path("repository")?;
-        create_note(&repo_path, "This is a note.md", "")?;
-        create_note(&repo_path, "This is something else.md", "")?;
-        create_note(&repo_path, "Another thing.md", "")?;
-        create_note(&repo_path, "This is note.md", "")?;
+        create_note(&repo_path, "Note A.md", "")?;
+        create_note(&repo_path, "Note B.md", "")?;
+        create_note(&repo_path, "Note C.md", "")?;
+        fs::create_dir(repo_path.join("Not a note"))?;
 
         let repo = FolderRepository::new(&repo_path)?;
 
-        let results: Vec<String> = repo
-            .search("This is an note")?
-            .iter()
-            .map(|result| result.key.1.clone())
-            .collect();
+        let mut notes = repo.notes()?;
+        notes.sort_by_key(|NoteKey(_, note_key)| note_key.to_owned());
+
         assert_eq!(
-            results,
-            [
-                String::from("This is a note.md"),
-                String::from("This is note.md"),
-                String::from("This is something else.md"),
-                String::from("Another thing.md"),
-            ]
-        );
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_folder_repository_search_empty_query() -> io::Result<()> {
-        let (_tempdir, repo_path) = create_temp_repo_path("repository")?;
-        create_note(&repo_path, "ABC.md", "")?;
-        create_note(&repo_path, "DEF.md", "")?;
-        create_note(&repo_path, "GHI.md", "")?;
-        create_note(&repo_path, "JKL.md", "")?;
-
-        let repo = FolderRepository::new(&repo_path)?;
-
-        let results: Vec<String> = repo
-            .search("")?
-            .iter()
-            .map(|result| result.key.1.clone())
-            .collect();
-        assert_eq!(
-            results,
-            [
-                String::from("ABC.md"),
-                String::from("DEF.md"),
-                String::from("GHI.md"),
-                String::from("JKL.md"),
+            notes,
+            vec![
+                repo.note_key("Note A.md"),
+                repo.note_key("Note B.md"),
+                repo.note_key("Note C.md"),
             ]
         );
 
