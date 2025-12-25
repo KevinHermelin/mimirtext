@@ -30,6 +30,7 @@ use std::{
         mpsc::{self, Receiver, Sender},
     },
     thread,
+    time::Duration,
 };
 
 use crate::{
@@ -223,6 +224,11 @@ impl App {
         Ok(())
     }
     fn handle_event(&mut self) -> Result<Message> {
+        // Do not block UI waiting for key input.
+        if !event::poll(Duration::from_millis(100))? {
+            return Ok(Message::None);
+        }
+
         match event::read()? {
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
                 Ok(self.handle_key_event(key_event))
