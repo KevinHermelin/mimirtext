@@ -66,7 +66,8 @@ impl KeyHandler<NotePaneMessage> for NotePaneModel {
 impl KeyHandler<SearchWindowMessage> for SearchWindowModel {
     fn handle_key_event(&self, key_event: KeyEvent) -> SearchWindowMessage {
         match (key_event.code, key_event.modifiers) {
-            (KeyCode::Enter, _) => SearchWindowMessage::OpenResult,
+            (KeyCode::Char('j'), KeyModifiers::CONTROL) => SearchWindowMessage::CreateNew,
+            (KeyCode::Enter, KeyModifiers::NONE) => SearchWindowMessage::OpenResult,
             (KeyCode::Down, _) => SearchWindowMessage::NextResult,
             (KeyCode::Up, _) => SearchWindowMessage::PreviousResult,
             _ => SearchWindowMessage::Input(self.input.handle_key_event(key_event)),

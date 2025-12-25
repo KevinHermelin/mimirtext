@@ -1,6 +1,7 @@
 use crate::{
     graph::SearchResult,
     model::{ClampAdd, Command, Update},
+    repository::NoteKey,
     text_input::{InputOperation, TextInput},
 };
 
@@ -30,6 +31,7 @@ pub enum SearchWindowMessage {
     NextResult,
     PreviousResult,
     OpenResult,
+    CreateNew,
 }
 
 impl Update<SearchWindowMessage> for SearchWindowModel {
@@ -51,6 +53,13 @@ impl Update<SearchWindowMessage> for SearchWindowModel {
                     .map(|result| result.key)
                     .map(Command::OpenNote)
                     .unwrap_or_default()
+            }
+            SearchWindowMessage::CreateNew => {
+                let repo_id = model.repo_id.clone();
+                let note_id = model.input.text().clone();
+                if !note_id.is_empty() {
+                    command = Command::ServeNote(NoteKey(repo_id, note_id));
+                }
             }
             _ => {}
         }
@@ -163,5 +172,21 @@ mod tests {
 
         let (_, command) = model.update(SearchWindowMessage::OpenResult);
         assert_eq!(command, Command::OpenNote(repo.note_key("search_result_b")));
+    }
+
+    #[test]
+    fn test_create_new() {
+        let repo = MockRepository::new();
+        let model = SearchWindowModel::new(repo.id());
+
+        let (model, command) = model.update(SearchWindowMessage::CreateNew);
+        assert_eq!(command, Command::None);
+
+        let (model, _) = model.update(SearchWindowMessage::Input(InputOperation::Insert(
+            String::from("note"),
+        )));
+
+        let (_, command) = model.update(SearchWindowMessage::CreateNew);
+        assert_eq!(command, Command::ServeNote(repo.note_key("note")));
     }
 }

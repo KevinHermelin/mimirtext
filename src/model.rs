@@ -97,6 +97,9 @@ impl Update<Message> for Model {
                         // opened. There is also the question of whether we should intercept
                         // commands like this at all.
                         model.search_window = None;
+                    } else if let Command::ServeNote(_) = command {
+                        // Same as above.
+                        model.search_window = None;
                     } else {
                         model.search_window = Some(search_window)
                     }
@@ -117,6 +120,7 @@ mod tests {
     use crate::{
         graph::SearchResult,
         repository::{MockRepository, Repository},
+        text_input::InputOperation,
     };
 
     use super::*;
@@ -148,10 +152,21 @@ mod tests {
         let (model, _) = model.update(Message::OpenSearch);
         assert_eq!(model.search_window, Some(SearchWindowModel::new(repo.id())));
 
+        // Should close when opening result.
         let (model, _) = model.update(Message::SearchWindow(SearchWindowMessage::UpdateResults(
             vec![SearchResult::new(repo.note_key("search_result"), 1.0)],
         )));
         let (model, _) = model.update(Message::SearchWindow(SearchWindowMessage::OpenResult));
+        assert_eq!(model.search_window, None);
+
+        // Should close when creating new file.
+        let (model, _) = model.update(Message::OpenSearch);
+        assert_eq!(model.search_window, Some(SearchWindowModel::new(repo.id())));
+
+        let (model, _) = model.update(Message::SearchWindow(SearchWindowMessage::Input(
+            InputOperation::Insert(String::from("note name")),
+        )));
+        let (model, _) = model.update(Message::SearchWindow(SearchWindowMessage::CreateNew));
         assert_eq!(model.search_window, None);
     }
 
