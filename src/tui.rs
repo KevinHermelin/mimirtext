@@ -126,12 +126,13 @@ impl App {
     fn run(&mut self, terminal: &mut Terminal<impl Backend>) -> Result<()> {
         let (query_tx, query_rx) = mpsc::channel();
         let (query_result_tx, query_result_rx) = mpsc::channel();
+        let (graph_progress_tx, graph_progress_rx) = mpsc::channel();
 
         {
             let repository = Arc::clone(&self.repository);
             thread::spawn(move || {
                 // An error in the index thread should make the main thread panic.
-                build_graph(repository, query_rx, query_result_tx).unwrap();
+                build_graph(repository, query_rx, query_result_tx, graph_progress_tx).unwrap();
             });
         }
 
@@ -140,7 +141,7 @@ impl App {
             terminal.draw(|frame| self.draw(frame))?;
 
             if let Message::None = message {
-                message = self.handle_event()?;
+                message = self.handle_event(&graph_progress_rx)?;
             }
 
             let (model, command) = self.model.update(message);
@@ -223,18 +224,29 @@ impl App {
         }
         Ok(())
     }
-    fn handle_event(&mut self) -> Result<Message> {
+    /// Listens for events from input or from `graph_progress_rx` and converts them
+    /// into messages.
+    ///
+    /// This function waits at most 100 ms for user input.
+    fn handle_event(
+        &mut self,
+        graph_progress_rx: &Receiver<GraphBuildProgress>,
+    ) -> Result<Message> {
         // Do not block UI waiting for key input.
-        if !event::poll(Duration::from_millis(100))? {
-            return Ok(Message::None);
+        if event::poll(Duration::from_millis(100))? {
+            match event::read()? {
+                Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
+                    return Ok(self.handle_key_event(key_event));
+                }
+                _ => {}
+            }
         }
 
-        match event::read()? {
-            Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-                Ok(self.handle_key_event(key_event))
-            }
-            _ => Ok(Message::None),
+        if let Some(progress) = graph_progress_rx.try_iter().last() {
+            return Ok(Message::NotePane(NotePaneMessage::GraphUpdate(progress)));
         }
+
+        Ok(Message::None)
     }
     fn handle_key_event(&mut self, key_event: KeyEvent) -> Message {
         if self.error_message.is_some() {
@@ -293,10 +305,33 @@ impl From<rusqlite::Error> for GraphThreadError {
     }
 }
 
+/// Represents the progress of a graph building job.
+///
+/// First index is the number of files indexed.
+/// Second index is the total number of files to index.
+#[derive(Clone, Debug, PartialEq)]
+pub struct GraphBuildProgress(pub usize, pub usize);
+
+impl GraphBuildProgress {
+    /// Calculates percentage done, as a float between 0.0 and 1.0.
+    pub fn percentage(&self) -> f32 {
+        let GraphBuildProgress(done, total) = self;
+        let done: f32 = *done as f32;
+        let total: f32 = *total as f32;
+        done / total
+    }
+    /// `true` if the job is complete, i.e. all files have been indexed.
+    pub fn done(&self) -> bool {
+        let GraphBuildProgress(done, total) = self;
+        done == total
+    }
+}
+
 fn build_graph(
     repository: Arc<RwLock<dyn Repository + Send + Sync + 'static>>,
     query_rx: Receiver<String>,
     query_result_tx: Sender<Vec<SearchResult>>,
+    graph_progress_tx: Sender<GraphBuildProgress>,
 ) -> Result<(), GraphThreadError> {
     let mut graph = RepositoryGraph::new()?;
 
@@ -309,7 +344,9 @@ fn build_graph(
         .map_err(|error| GraphThreadError::RepositoryList(repo_id, error))?
         .clone();
 
-    for key in queue {
+    let notes_count = queue.len();
+
+    for (i, key) in queue.iter().enumerate() {
         // Non-blocking while performing work.
         if let Ok(query) = query_rx.try_recv() {
             handle_query(&graph, query, &query_result_tx)?;
@@ -321,13 +358,17 @@ fn build_graph(
             .read()
             .unwrap()
             .note(&id)
-            .map_err(|error| GraphThreadError::NoteParse(key, error));
+            .map_err(|error| GraphThreadError::NoteParse(key.clone(), error));
 
         // Silently ignoring all files which cannot be read. Otherwise, this would panic on pictures in the repo.
         // TODO: This should be better handled.
         if let Ok(note) = note {
             graph = graph.register_note(&note)?;
         }
+
+        graph_progress_tx
+            .send(GraphBuildProgress(i + 1, notes_count))
+            .expect("should be able to send graph progress");
     }
 
     // Blocking.
@@ -401,5 +442,20 @@ mod tests {
             })
             .unwrap();
         assert_snapshot!(terminal.backend());
+    }
+
+    #[test]
+    fn test_graph_build_progress_percentage() {
+        assert_eq!(GraphBuildProgress(10, 100).percentage(), 0.1);
+        assert_eq!(GraphBuildProgress(5, 10).percentage(), 0.5);
+        assert_eq!(GraphBuildProgress(1, 4).percentage(), 0.25);
+    }
+
+    #[test]
+    fn test_graph_build_progress_done() {
+        assert!(!GraphBuildProgress(10, 100).done());
+        assert!(!GraphBuildProgress(0, 5).done());
+        assert!(!GraphBuildProgress(99, 100).done());
+        assert!(GraphBuildProgress(10, 10).done());
     }
 }

@@ -3,6 +3,7 @@ use crate::{
     model::{ClampAdd, Command, Update},
     repository::{NoteKey, NoteSnapshot},
     text_input::{Completion, InputOperation, TextInput, TextInputConfig},
+    tui::GraphBuildProgress,
 };
 
 /// A struct representing the state of a note opened for reading and optionally writing.
@@ -85,6 +86,7 @@ pub enum NotePaneState {
 pub struct NotePaneModel {
     pub state: NotePaneState,
     pub history: Vec<NoteKey>,
+    pub graph_build_progress: Option<GraphBuildProgress>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -157,6 +159,14 @@ impl Update<NotePaneMessage> for NotePaneModel {
                 .unwrap_or(NotePaneState::Empty);
 
             command = new_note.map(Command::ServeNote).unwrap_or(Command::None);
+        }
+
+        if let NotePaneMessage::GraphUpdate(graph_progress) = &message {
+            model.graph_build_progress = if graph_progress.done() {
+                None
+            } else {
+                Some(graph_progress.to_owned())
+            }
         }
 
         if let NotePaneState::With(context) = &mut model.state {
@@ -248,6 +258,7 @@ pub enum NotePaneMessage {
     PushNote(NoteSnapshot),
     PopNote,
     UpdateNote(NoteSnapshot),
+    GraphUpdate(GraphBuildProgress),
     ScrollUp,
     ScrollDown,
     NextLink,
@@ -273,7 +284,8 @@ mod tests {
             NotePaneModel::default(),
             NotePaneModel {
                 state: NotePaneState::Empty,
-                history: vec![]
+                history: vec![],
+                graph_build_progress: None
             }
         );
     }
@@ -594,5 +606,30 @@ mod tests {
         let (model, command) = model.update(NotePaneMessage::PopNote);
         assert_eq!(model.state, NotePaneState::Empty);
         assert_eq!(command, Command::None);
+    }
+
+    #[test]
+    fn test_graph_update() {
+        let model = NotePaneModel::default();
+
+        assert_eq!(model.graph_build_progress, None);
+
+        let (model, _) = model.update(NotePaneMessage::GraphUpdate(GraphBuildProgress(10, 100)));
+
+        assert_eq!(
+            model.graph_build_progress,
+            Some(GraphBuildProgress(10, 100))
+        );
+
+        let (model, _) = model.update(NotePaneMessage::GraphUpdate(GraphBuildProgress(99, 100)));
+
+        assert_eq!(
+            model.graph_build_progress,
+            Some(GraphBuildProgress(99, 100))
+        );
+
+        let (model, _) = model.update(NotePaneMessage::GraphUpdate(GraphBuildProgress(100, 100)));
+
+        assert_eq!(model.graph_build_progress, None);
     }
 }

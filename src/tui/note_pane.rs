@@ -37,6 +37,11 @@ impl NotePaneModel {
     fn render_block(&self, area: Rect, buf: &mut Buffer) -> Rect {
         let mut block = Block::bordered().border_set(border::THICK);
 
+        if let Some(progress) = self.graph_build_progress.clone() {
+            let progress_text = format!(" building graph ({:.0}%) ", progress.percentage() * 100.0);
+            block = block.title_top(Line::from(progress_text).dim().right_aligned());
+        }
+
         if let NotePaneState::With(context) = &self.state {
             let mut title_text = context.note.title.clone();
             let mut title_style = Style::new().add_modifier(Modifier::BOLD);
@@ -187,6 +192,7 @@ mod tests {
         model::{Update, note_pane::NotePaneMessage},
         repository::{MockRepository, Repository},
         text_input::{Completion, InputOperation},
+        tui::GraphBuildProgress,
     };
     use insta::assert_snapshot;
     use ratatui::{Terminal, backend::TestBackend};
@@ -202,6 +208,20 @@ mod tests {
     #[test]
     fn test_no_note() {
         let model = NotePaneModel::default();
+
+        let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
+        terminal
+            .draw(|frame| {
+                model.render_with_cursor(frame.area(), frame.buffer_mut());
+            })
+            .unwrap();
+        assert_snapshot!(terminal.backend());
+    }
+
+    #[test]
+    fn test_graph_building() {
+        let model = NotePaneModel::default();
+        let (model, _) = model.update(NotePaneMessage::GraphUpdate(GraphBuildProgress(51, 200)));
 
         let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
         terminal
