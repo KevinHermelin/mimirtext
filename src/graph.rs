@@ -1,5 +1,6 @@
+use std::collections::HashSet;
+
 use rapidfuzz::distance::jaro_winkler;
-use rusqlite::Connection;
 
 use crate::{
     markdown::{LinkTarget, MarkdownDocument},
@@ -7,7 +8,7 @@ use crate::{
 };
 
 pub struct RepositoryGraph {
-    connection: Connection,
+    labels: HashSet<NoteKey>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -23,77 +24,37 @@ impl SearchResult {
 }
 
 impl RepositoryGraph {
-    pub fn new() -> rusqlite::Result<Self> {
-        let connection = Connection::open_in_memory()?;
-
-        connection.execute(
-            "CREATE TABLE label (
-                    id      INTEGER PRIMARY KEY,
-                    title   TEXT NOT NULL,
-                    repo    TEXT NOT NULL
-                )",
-            (),
-        )?;
-
-        Ok(Self { connection })
-    }
-
-    fn get_labels(&self) -> rusqlite::Result<Vec<NoteKey>> {
-        let mut stmt: rusqlite::Statement<'_> = self
-            .connection
-            .prepare("SELECT id, title, repo FROM label")?;
-
-        let labels: rusqlite::Result<Vec<NoteKey>> = stmt
-            .query_map([], |row| Ok(NoteKey(row.get(2)?, row.get(1)?)))?
-            .collect();
-
-        labels
-    }
-
-    fn insert_label(&mut self, title: &str, repo_key: &str) -> rusqlite::Result<()> {
-        let already_exists = self
-            .get_labels()?
-            .contains(&NoteKey(repo_key.to_string(), title.to_string()));
-
-        if already_exists {
-            return Ok(());
+    pub fn new() -> Self {
+        Self {
+            labels: HashSet::new(),
         }
-
-        self.connection.execute(
-            "INSERT INTO label (title, repo) VALUES (?1, ?2)",
-            (title, repo_key),
-        )?;
-
-        Ok(())
     }
 
-    pub fn register_note(mut self, note: &NoteSnapshot) -> rusqlite::Result<Self> {
-        let NoteSnapshot {
-            title, key, body, ..
-        } = note.to_owned();
+    pub fn register_note(mut self, note: &NoteSnapshot) -> Self {
+        let NoteSnapshot { key, body, .. } = note.to_owned();
 
-        let NoteKey(repo_key, _) = key;
+        let NoteKey(repo_id, _) = key.clone();
 
         // Register this note.
-        self.insert_label(&title, &repo_key)?;
+        self.labels.insert(key);
 
         // Register outgoing links.
         let outgoing = MarkdownDocument::new(&body).get_links();
         for link in outgoing {
             if let LinkTarget::Note(title) = link.target {
-                let note_key = title + ".md";
-                self.insert_label(&note_key, &repo_key)?;
+                let key = NoteKey(repo_id.clone(), title + ".md");
+                self.labels.insert(key);
             }
         }
 
-        Ok(self)
+        self
     }
 
-    pub fn search(&self, query: &str) -> rusqlite::Result<Vec<SearchResult>> {
+    pub fn search(&self, query: &str) -> Vec<SearchResult> {
         let scorer = jaro_winkler::BatchComparator::new(query.to_lowercase().chars());
 
         let mut labels: Vec<SearchResult> = self
-            .get_labels()?
+            .labels
             .iter()
             .map(|NoteKey(repo_id, note_id)| {
                 SearchResult::new(
@@ -109,7 +70,7 @@ impl RepositoryGraph {
             labels.sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap());
         }
 
-        Ok(labels)
+        labels
     }
 }
 
@@ -120,50 +81,46 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_label_search() -> rusqlite::Result<()> {
+    fn test_label_search() {
         let mut repo = MockRepository::new();
-        let graph = RepositoryGraph::new()?;
+        let graph = RepositoryGraph::new();
 
-        assert_eq!(graph.search("note")?, []);
+        assert_eq!(graph.search("note"), []);
 
         let note = repo.insert_note("note.md", "This points to [[another note]]. Two links to make sure that it removes duplicates [[another note]].");
-        let graph = graph.register_note(&note)?;
+        let graph = graph.register_note(&note);
 
         let note_key = note.key;
         let another_note_key = NoteKey(note_key.clone().0, String::from("another note.md"));
 
         let search_results: Vec<NoteKey> = graph
-            .search("note")?
+            .search("note")
             .iter()
             .map(|result| result.key.clone())
             .collect();
         assert_eq!(search_results, vec![note_key, another_note_key]);
-
-        Ok(())
     }
 
     #[test]
-    fn test_label_search_empty_query() -> rusqlite::Result<()> {
+    fn test_label_search_empty_query() {
         let mut repo = MockRepository::new();
-        let graph = RepositoryGraph::new()?;
+        let graph = RepositoryGraph::new();
 
-        assert_eq!(graph.search("")?, []);
+        assert_eq!(graph.search(""), []);
 
         let note = repo.insert_note("note.md", "This points to [[another note]]. Two links to make sure that it removes duplicates [[another note]].");
-        let graph = graph.register_note(&note)?;
+        let graph = graph.register_note(&note);
 
         let note_key: NoteKey = note.key;
         let another_note_key = NoteKey(note_key.clone().0, String::from("another note.md"));
 
         let search_results: Vec<NoteKey> = graph
-            .search("")?
+            .search("")
             .iter()
             .map(|result| result.key.clone())
             .collect();
 
         // Results should be in alphabetical order.
         assert_eq!(search_results, vec![another_note_key, note_key]);
-
-        Ok(())
     }
 }

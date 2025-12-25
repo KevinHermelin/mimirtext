@@ -9,7 +9,7 @@ use tempfile::NamedTempFile;
 #[cfg(test)]
 use uuid::Uuid;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct NoteKey(pub String, pub String);
 
 impl From<(&str, &str)> for NoteKey {

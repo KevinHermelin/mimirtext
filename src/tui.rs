@@ -75,29 +75,6 @@ pub trait WidgetWithCursor {
     fn render_with_cursor(&self, area: Rect, buf: &mut Buffer) -> Option<Position>;
 }
 
-fn handle_query(
-    graph: &RepositoryGraph,
-    query: String,
-    query_result_tx: &Sender<Vec<SearchResult>>,
-) -> Result<(), rusqlite::Error> {
-    let results = graph.search(&query)?;
-    query_result_tx
-        .send(results)
-        .expect("should be able to send query result");
-    Ok(())
-}
-
-fn send_query(
-    query: String,
-    query_tx: &Sender<String>,
-    query_result_rx: &Receiver<Vec<SearchResult>>,
-) -> Result<Vec<SearchResult>> {
-    query_tx.send(query)?;
-    let results = query_result_rx.recv()?;
-
-    Ok(results)
-}
-
 impl App {
     fn new(
         repository: Arc<RwLock<dyn Repository + Send + Sync>>,
@@ -268,7 +245,6 @@ impl App {
 
 #[derive(Debug)]
 enum GraphThreadError {
-    SQLQuery(rusqlite::Error),
     RepositoryList(String, io::Error),
     NoteParse(NoteKey, io::Error),
 }
@@ -276,9 +252,6 @@ enum GraphThreadError {
 impl fmt::Display for GraphThreadError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Self::SQLQuery(..) => {
-                write!(f, "error from database")
-            }
             Self::RepositoryList(repo_id, ..) => {
                 write!(f, "could not list notes from repository {:?}", repo_id)
             }
@@ -292,16 +265,9 @@ impl fmt::Display for GraphThreadError {
 impl error::Error for GraphThreadError {
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match self {
-            Self::SQLQuery(e) => Some(e),
             Self::RepositoryList(_, e) => Some(e),
             Self::NoteParse(_, e) => Some(e),
         }
-    }
-}
-
-impl From<rusqlite::Error> for GraphThreadError {
-    fn from(err: rusqlite::Error) -> Self {
-        Self::SQLQuery(err)
     }
 }
 
@@ -327,13 +293,35 @@ impl GraphBuildProgress {
     }
 }
 
+fn handle_query(
+    graph: &RepositoryGraph,
+    query: String,
+    query_result_tx: &Sender<Vec<SearchResult>>,
+) {
+    let results = graph.search(&query);
+    query_result_tx
+        .send(results)
+        .expect("should be able to send query result");
+}
+
+fn send_query(
+    query: String,
+    query_tx: &Sender<String>,
+    query_result_rx: &Receiver<Vec<SearchResult>>,
+) -> Result<Vec<SearchResult>> {
+    query_tx.send(query)?;
+    let results = query_result_rx.recv()?;
+
+    Ok(results)
+}
+
 fn build_graph(
     repository: Arc<RwLock<dyn Repository + Send + Sync + 'static>>,
     query_rx: Receiver<String>,
     query_result_tx: Sender<Vec<SearchResult>>,
     graph_progress_tx: Sender<GraphBuildProgress>,
 ) -> Result<(), GraphThreadError> {
-    let mut graph = RepositoryGraph::new()?;
+    let mut graph = RepositoryGraph::new();
 
     // Important that repository is not locked for later.
     let repo_id = repository.read().unwrap().id().to_string();
@@ -349,7 +337,7 @@ fn build_graph(
     for (i, key) in queue.iter().enumerate() {
         // Non-blocking while performing work.
         if let Ok(query) = query_rx.try_recv() {
-            handle_query(&graph, query, &query_result_tx)?;
+            handle_query(&graph, query, &query_result_tx);
         }
 
         let NoteKey(_, id) = key.clone();
@@ -363,7 +351,7 @@ fn build_graph(
         // Silently ignoring all files which cannot be read. Otherwise, this would panic on pictures in the repo.
         // TODO: This should be better handled.
         if let Ok(note) = note {
-            graph = graph.register_note(&note)?;
+            graph = graph.register_note(&note);
         }
 
         graph_progress_tx
@@ -373,7 +361,7 @@ fn build_graph(
 
     // Blocking.
     for query in query_rx {
-        handle_query(&graph, query, &query_result_tx)?;
+        handle_query(&graph, query, &query_result_tx);
     }
 
     Ok(())
