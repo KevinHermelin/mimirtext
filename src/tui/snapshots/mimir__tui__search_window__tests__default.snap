@@ -2,13 +2,13 @@
 source: src/tui/search_window.rs
 expression: terminal.backend()
 ---
-"╭Search────────────╮"
-"│Type to search... │"
-"│                  │"
-"│                  │"
-"│                  │"
-"│                  │"
-"│                  │"
-"│                  │"
-"│                  │"
-"╰──────────────────╯"
+"╭Search─────────────────╮"
+"│repo:note name         │"
+"│                       │"
+"│                       │"
+"│                       │"
+"│                       │"
+"│                       │"
+"│                       │"
+"│                       │"
+"╰───────────────────────╯"

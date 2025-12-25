@@ -23,16 +23,18 @@ impl WidgetWithCursor for SearchWindowModel {
             .constraints(vec![Constraint::Length(2), Constraint::Min(5)])
             .split(inner);
 
-        let search_line = if self.input.text().is_empty() {
-            Line::from("Type to search...").dim()
+        let mut search_line = Line::from(format!("{}:", self.repo_id)).bold().light_blue();
+        let mut cursor_x = search_line.width();
+
+        if self.input.text().is_empty() {
+            search_line.push_span("note name".reset().dim());
         } else {
-            Line::from(self.input.text())
+            search_line.push_span(self.input.text().reset());
+            cursor_x += self.input.cursor_column();
         };
+
         search_line.render(layout[0], buf);
-        let cursor = Some(Position::new(
-            layout[0].x + self.input.cursor_column() as u16,
-            layout[0].y,
-        ));
+        let cursor = Some(Position::new(layout[0].x + cursor_x as u16, layout[0].y));
 
         let mut lines = vec![];
         for (index, result) in self.results.iter().cloned().enumerate() {
@@ -74,9 +76,9 @@ mod tests {
 
     #[test]
     fn test_default() {
-        let model = SearchWindowModel::default();
+        let model = SearchWindowModel::new("repo");
 
-        let mut terminal = Terminal::new(TestBackend::new(20, 10)).unwrap();
+        let mut terminal = Terminal::new(TestBackend::new(25, 10)).unwrap();
         terminal
             .draw(|frame| {
                 model.render_with_cursor(frame.area(), frame.buffer_mut());
@@ -98,9 +100,10 @@ mod tests {
                 SearchResult::new(repo.note_key("Result D"), 1.0),
             ],
             selection_index: 2,
+            repo_id: String::from("repo"),
         };
 
-        let mut terminal = Terminal::new(TestBackend::new(20, 10)).unwrap();
+        let mut terminal = Terminal::new(TestBackend::new(25, 10)).unwrap();
         terminal
             .draw(|frame| {
                 model.render_with_cursor(frame.area(), frame.buffer_mut());
@@ -111,12 +114,12 @@ mod tests {
 
     #[test]
     fn test_cursor() {
-        let model = SearchWindowModel::default();
-        let mut terminal = Terminal::new(TestBackend::new(20, 10)).unwrap();
+        let model = SearchWindowModel::new("repo");
+        let mut terminal = Terminal::new(TestBackend::new(25, 10)).unwrap();
 
         assert_eq!(
             model.render_with_cursor(terminal.get_frame().area(), terminal.current_buffer_mut()),
-            Some(Position::new(1, 1))
+            Some(Position::new(1 + 4 + 1, 1))
         );
 
         let (model, _) = model.update(SearchWindowMessage::Input(
@@ -125,17 +128,17 @@ mod tests {
 
         assert_eq!(
             model.render_with_cursor(terminal.get_frame().area(), terminal.current_buffer_mut()),
-            Some(Position::new(5, 1))
+            Some(Position::new(1 + 4 + 1 + 4, 1))
         );
 
-        let model = SearchWindowModel::default();
+        let model = SearchWindowModel::new("repo");
         let (model, _) = model.update(SearchWindowMessage::Input(
             crate::text_input::InputOperation::Insert(String::from("åäö")),
         ));
 
         assert_eq!(
             model.render_with_cursor(terminal.get_frame().area(), terminal.current_buffer_mut()),
-            Some(Position::new(4, 1))
+            Some(Position::new(1 + 4 + 1 + 3, 1))
         );
     }
 }

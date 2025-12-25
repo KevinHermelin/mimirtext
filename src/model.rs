@@ -35,11 +35,12 @@ pub enum RunningState {
     Done,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Model {
     pub running_state: RunningState,
     pub note_pane: NotePaneModel,
     pub search_window: Option<SearchWindowModel>,
+    pub repo_id: String,
 }
 
 #[derive(Clone)]
@@ -63,6 +64,17 @@ pub enum Command {
     SearchQuery(String),
     CommitNote(NoteSnapshot),
     RequestLinkCompletion(Range<usize>, String),
+}
+
+impl Model {
+    pub fn new(repo_id: &str) -> Self {
+        Self {
+            running_state: RunningState::default(),
+            note_pane: NotePaneModel::default(),
+            search_window: None,
+            repo_id: repo_id.to_owned(),
+        }
+    }
 }
 
 impl Update<Message> for Model {
@@ -90,7 +102,9 @@ impl Update<Message> for Model {
                     }
                 }
             }
-            Message::OpenSearch => model.search_window = Some(SearchWindowModel::default()),
+            Message::OpenSearch => {
+                model.search_window = Some(SearchWindowModel::new(&model.repo_id))
+            }
             Message::CloseSearch => model.search_window = None,
             Message::None => {}
         }
@@ -110,32 +124,32 @@ mod tests {
     #[test]
     fn test_default_model() {
         assert_eq!(
-            Model::default(),
+            Model::new("repo"),
             Model {
                 running_state: RunningState::Running,
                 note_pane: NotePaneModel::default(),
-                search_window: None
+                search_window: None,
+                repo_id: String::from("repo")
             }
         )
     }
 
     #[test]
     fn test_search_window() {
-        let model = Model::default();
+        let repo = MockRepository::new();
+        let model = Model::new(repo.id());
+
         assert_eq!(model.search_window, None);
         let (model, _) = model.update(Message::OpenSearch);
-        assert_eq!(model.search_window, Some(SearchWindowModel::default()));
+        assert_eq!(model.search_window, Some(SearchWindowModel::new(repo.id())));
         let (model, _) = model.update(Message::CloseSearch);
         assert_eq!(model.search_window, None);
 
         let (model, _) = model.update(Message::OpenSearch);
-        assert_eq!(model.search_window, Some(SearchWindowModel::default()));
+        assert_eq!(model.search_window, Some(SearchWindowModel::new(repo.id())));
 
         let (model, _) = model.update(Message::SearchWindow(SearchWindowMessage::UpdateResults(
-            vec![SearchResult::new(
-                MockRepository::new().note_key("search_result"),
-                1.0,
-            )],
+            vec![SearchResult::new(repo.note_key("search_result"), 1.0)],
         )));
         let (model, _) = model.update(Message::SearchWindow(SearchWindowMessage::OpenResult));
         assert_eq!(model.search_window, None);
@@ -143,7 +157,7 @@ mod tests {
 
     #[test]
     fn test_quit() {
-        let model = Model::default();
+        let model = Model::new("repo");
 
         assert_eq!(model.running_state, RunningState::Running);
         let (model, _) = model.update(Message::Quit);

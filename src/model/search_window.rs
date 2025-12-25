@@ -9,14 +9,16 @@ pub struct SearchWindowModel {
     pub input: TextInput,
     pub results: Vec<SearchResult>,
     pub selection_index: isize,
+    pub repo_id: String,
 }
 
-impl Default for SearchWindowModel {
-    fn default() -> Self {
+impl SearchWindowModel {
+    pub fn new(repo_id: &str) -> Self {
         Self {
             input: TextInput::new(),
             results: vec![],
             selection_index: 0,
+            repo_id: repo_id.to_owned(),
         }
     }
 }
@@ -81,11 +83,12 @@ mod tests {
     #[test]
     fn test_default_model() {
         assert_eq!(
-            SearchWindowModel::default(),
+            SearchWindowModel::new("repo"),
             SearchWindowModel {
                 input: TextInput::new(),
                 results: vec![],
-                selection_index: 0
+                selection_index: 0,
+                repo_id: String::from("repo")
             }
         );
     }
@@ -94,7 +97,7 @@ mod tests {
     fn test_input() {
         let model = SearchWindowModel {
             selection_index: 2,
-            ..Default::default()
+            ..SearchWindowModel::new("repo")
         };
 
         let (model, command) = model.update(SearchWindowMessage::Input(InputOperation::Insert(
@@ -116,8 +119,8 @@ mod tests {
 
     #[test]
     fn test_update_results() {
-        let model = SearchWindowModel::default();
         let repo = MockRepository::new();
+        let model = SearchWindowModel::new(repo.id());
 
         let (model, _) = model.update(SearchWindowMessage::UpdateResults(vec![
             SearchResult::new(repo.note_key("search_result_a"), 1.0),
@@ -137,8 +140,8 @@ mod tests {
 
     #[test]
     fn test_result_selection() {
-        let model = SearchWindowModel::default();
         let repo = MockRepository::new();
+        let model = SearchWindowModel::new(repo.id());
 
         let (model, _) = model.update(SearchWindowMessage::UpdateResults(vec![
             SearchResult::new(repo.note_key("search_result_a"), 1.0),

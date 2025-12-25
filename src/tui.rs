@@ -80,7 +80,7 @@ impl App {
         repository: Arc<RwLock<dyn Repository + Send + Sync>>,
         note: Option<NoteSnapshot>,
     ) -> Self {
-        let mut model = Model::default();
+        let mut model = Model::new(repository.read().unwrap().id());
 
         if let Some(note) = note {
             let (new_model, command) =
