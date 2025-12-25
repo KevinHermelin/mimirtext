@@ -315,9 +315,13 @@ fn build_graph(
             .read()
             .unwrap()
             .note(&id)
-            .map_err(|error| GraphThreadError::NoteParse(key, error))?;
+            .map_err(|error| GraphThreadError::NoteParse(key, error));
 
-        graph = graph.register_note(&note)?;
+        // Silently ignoring all files which cannot be read. Otherwise, this would panic on pictures in the repo.
+        // TODO: This should be better handled.
+        if let Ok(note) = note {
+            graph = graph.register_note(&note)?;
+        }
     }
 
     // Blocking.
