@@ -22,12 +22,18 @@ use ratatui::{
     widgets::{Block, Clear, Paragraph, Widget},
 };
 use std::{
+    error, fmt,
     io::{self, stdout},
     path::{Path, PathBuf},
+    sync::{
+        Arc, RwLock,
+        mpsc::{self, Receiver, Sender},
+    },
+    thread,
 };
 
 use crate::{
-    graph::RepositoryGraph,
+    graph::{RepositoryGraph, SearchResult},
     markdown::LinkTarget,
     model::{
         Command, Message, Model, RunningState, Update, note_pane::NotePaneMessage,
@@ -60,7 +66,7 @@ pub fn main() -> Result<()> {
 
 pub struct App {
     model: Model,
-    repository: Box<dyn Repository>,
+    repository: Arc<RwLock<dyn Repository + Send + Sync>>,
     error_message: Option<String>,
 }
 
@@ -68,8 +74,34 @@ pub trait WidgetWithCursor {
     fn render_with_cursor(&self, area: Rect, buf: &mut Buffer) -> Option<Position>;
 }
 
+fn handle_query(
+    graph: &RepositoryGraph,
+    query: String,
+    query_result_tx: &Sender<Vec<SearchResult>>,
+) -> Result<(), rusqlite::Error> {
+    let results = graph.search(&query)?;
+    query_result_tx
+        .send(results)
+        .expect("should be able to send query result");
+    Ok(())
+}
+
+fn send_query(
+    query: String,
+    query_tx: &Sender<String>,
+    query_result_rx: &Receiver<Vec<SearchResult>>,
+) -> Result<Vec<SearchResult>> {
+    query_tx.send(query)?;
+    let results = query_result_rx.recv()?;
+
+    Ok(results)
+}
+
 impl App {
-    fn new(repository: Box<dyn Repository>, note: Option<NoteSnapshot>) -> Self {
+    fn new(
+        repository: Arc<RwLock<dyn Repository + Send + Sync>>,
+        note: Option<NoteSnapshot>,
+    ) -> Self {
         let mut model = Model::default();
 
         if let Some(note) = note {
@@ -88,16 +120,18 @@ impl App {
     fn from_path(path: &Path) -> io::Result<Self> {
         let (repo, note) = FolderRepository::open_path(path)?;
 
-        Ok(App::new(Box::new(repo), note))
+        Ok(App::new(Arc::new(RwLock::new(repo)), note))
     }
     fn run(&mut self, terminal: &mut Terminal<impl Backend>) -> Result<()> {
-        let mut graph = RepositoryGraph::new()?;
-        for key in self.repository.notes()? {
-            let NoteKey(_, id) = key;
+        let (query_tx, query_rx) = mpsc::channel();
+        let (query_result_tx, query_result_rx) = mpsc::channel();
 
-            if let Ok(note) = self.repository.note(&id) {
-                graph = graph.register_note(&note)?;
-            }
+        {
+            let repository = Arc::clone(&self.repository);
+            thread::spawn(move || {
+                // An error in the index thread should make the main thread panic.
+                build_graph(repository, query_rx, query_result_tx).unwrap();
+            });
         }
 
         let mut message = Message::None;
@@ -114,14 +148,16 @@ impl App {
 
             match command {
                 Command::EditExternally(note) => {
+                    let mut repository = self.repository.write().unwrap();
+
                     stdout().execute(LeaveAlternateScreen)?;
                     disable_raw_mode()?;
 
                     let NoteKey(repo_id, note_id) = note;
-                    assert_eq!(repo_id, self.repository.id());
+                    assert_eq!(repo_id, repository.id());
 
-                    self.repository.edit_externally(&note_id)?;
-                    let note = self.repository.note(&note_id)?;
+                    repository.edit_externally(&note_id)?;
+                    let note = repository.note(&note_id)?;
                     message = Message::NotePane(NotePaneMessage::UpdateNote(note));
 
                     stdout().execute(EnterAlternateScreen)?;
@@ -130,8 +166,10 @@ impl App {
                 }
                 Command::FollowLink(link) => match link {
                     LinkTarget::Note(target) => {
-                        let id = self.repository.resolve_reference(&target);
-                        let note = self.repository.note(&id)?;
+                        let repository = self.repository.read().unwrap();
+
+                        let id = repository.resolve_reference(&target);
+                        let note = repository.note(&id)?;
                         message = Message::NotePane(NotePaneMessage::PushNote(note));
                     }
                     LinkTarget::External(target) => {
@@ -139,30 +177,38 @@ impl App {
                     }
                 },
                 Command::ServeNote(note) => {
+                    let repository = self.repository.read().unwrap();
+
                     let NoteKey(repo_id, id) = note;
-                    assert_eq!(repo_id, self.repository.id());
-                    let note = self.repository.note(&id)?;
+                    assert_eq!(repo_id, repository.id());
+                    let note = repository.note(&id)?;
                     message = Message::NotePane(NotePaneMessage::UpdateNote(note));
                 }
                 Command::SearchQuery(query) => {
-                    let results = graph.search(&query)?;
+                    let results = send_query(query, &query_tx, &query_result_rx)?;
+
                     message = Message::SearchWindow(SearchWindowMessage::UpdateResults(results));
                 }
                 Command::OpenNote(key) => {
+                    let repository = self.repository.read().unwrap();
+
                     let NoteKey(_, note_id) = key;
-                    let note = self.repository.note(&note_id)?;
+                    let note = repository.note(&note_id)?;
                     message = Message::NotePane(NotePaneMessage::PushNote(note));
                 }
                 Command::CommitNote(note) => {
-                    let NoteKey(repo_id, note_id) = &note.key.clone();
-                    assert_eq!(repo_id, self.repository.id());
-                    self.repository.commit_note(note)?;
+                    let mut repository = self.repository.write().unwrap();
 
-                    let note = self.repository.note(note_id)?;
+                    let NoteKey(repo_id, note_id) = &note.key.clone();
+                    assert_eq!(repo_id, repository.id());
+                    repository.commit_note(note)?;
+
+                    let note = repository.note(note_id)?;
                     message = Message::NotePane(NotePaneMessage::UpdateNote(note));
                 }
                 Command::RequestLinkCompletion(range, text) => {
-                    let results = graph.search(&text)?;
+                    let results = send_query(text, &query_tx, &query_result_rx)?;
+
                     let completions = results
                         .iter()
                         .map(|result| result.key.1.clone().split(".md").next().unwrap().to_owned())
@@ -200,6 +246,86 @@ impl App {
             frame.set_cursor_position(position);
         }
     }
+}
+
+#[derive(Debug)]
+enum GraphThreadError {
+    SQLQuery(rusqlite::Error),
+    RepositoryList(String, io::Error),
+    NoteParse(NoteKey, io::Error),
+}
+
+impl fmt::Display for GraphThreadError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::SQLQuery(..) => {
+                write!(f, "error from database")
+            }
+            Self::RepositoryList(repo_id, ..) => {
+                write!(f, "could not list notes from repository {:?}", repo_id)
+            }
+            Self::NoteParse(note_key, ..) => {
+                write!(f, "could not parse note {:?}", note_key)
+            }
+        }
+    }
+}
+
+impl error::Error for GraphThreadError {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+        match self {
+            Self::SQLQuery(e) => Some(e),
+            Self::RepositoryList(_, e) => Some(e),
+            Self::NoteParse(_, e) => Some(e),
+        }
+    }
+}
+
+impl From<rusqlite::Error> for GraphThreadError {
+    fn from(err: rusqlite::Error) -> Self {
+        Self::SQLQuery(err)
+    }
+}
+
+fn build_graph(
+    repository: Arc<RwLock<dyn Repository + Send + Sync + 'static>>,
+    query_rx: Receiver<String>,
+    query_result_tx: Sender<Vec<SearchResult>>,
+) -> Result<(), GraphThreadError> {
+    let mut graph = RepositoryGraph::new()?;
+
+    // Important that repository is not locked for later.
+    let repo_id = repository.read().unwrap().id().to_string();
+    let queue = repository
+        .read()
+        .unwrap()
+        .notes()
+        .map_err(|error| GraphThreadError::RepositoryList(repo_id, error))?
+        .clone();
+
+    for key in queue {
+        // Non-blocking while performing work.
+        if let Ok(query) = query_rx.try_recv() {
+            handle_query(&graph, query, &query_result_tx)?;
+        }
+
+        let NoteKey(_, id) = key.clone();
+
+        let note = repository
+            .read()
+            .unwrap()
+            .note(&id)
+            .map_err(|error| GraphThreadError::NoteParse(key, error))?;
+
+        graph = graph.register_note(&note)?;
+    }
+
+    // Blocking.
+    for query in query_rx {
+        handle_query(&graph, query, &query_result_tx)?;
+    }
+
+    Ok(())
 }
 
 impl WidgetWithCursor for App {
@@ -246,15 +372,15 @@ impl WidgetWithCursor for Model {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::repository::MockRepository;
+    use crate::repository::{MockRepository, NoteBody};
     use insta::assert_snapshot;
     use ratatui::{Terminal, backend::TestBackend};
 
     #[test]
     fn test_render_error() {
         let mut repository = MockRepository::new();
-        let note = repository.insert_note("Note name.md", "This is a file.");
-        let mut app = App::new(Box::new(repository), Some(note));
+        let note = repository.insert_note("Note name.md", NoteBody::new("This is a file."));
+        let mut app = App::new(Arc::new(RwLock::new(repository)), Some(note));
 
         app.error_message = Some(String::from("This is an error"));
 

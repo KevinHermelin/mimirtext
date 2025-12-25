@@ -214,7 +214,7 @@ impl Repository for FolderRepository {
 pub struct MockRepository {
     notes: HashMap<String, NoteSnapshot>,
     id: String,
-    pub edit_externally_impl: Box<dyn FnMut(NoteSnapshot) -> NoteSnapshot>,
+    pub edit_externally_impl: Box<dyn FnMut(NoteSnapshot) -> NoteSnapshot + Send + Sync>,
 }
 
 #[cfg(test)]
