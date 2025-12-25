@@ -376,14 +376,14 @@ impl WidgetWithCursor for Model {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::repository::{MockRepository, NoteBody};
+    use crate::repository::MockRepository;
     use insta::assert_snapshot;
     use ratatui::{Terminal, backend::TestBackend};
 
     #[test]
     fn test_render_error() {
         let mut repository = MockRepository::new();
-        let note = repository.insert_note("Note name.md", NoteBody::new("This is a file."));
+        let note = repository.insert_note("Note name.md", "This is a file.");
         let mut app = App::new(Arc::new(RwLock::new(repository)), Some(note));
 
         app.error_message = Some(String::from("This is an error"));
