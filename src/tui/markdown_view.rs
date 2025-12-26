@@ -1,3 +1,4 @@
+use crate::{document::markdown::MarkdownDocument, model::note_pane::NoteContext};
 use pulldown_cmark::{Event, Tag, TagEnd};
 use ratatui::{
     buffer::Buffer,
@@ -7,15 +8,13 @@ use ratatui::{
     widgets::{Paragraph, Widget, Wrap},
 };
 
-use crate::markdown::{LinkRef, MarkdownDocument};
-
 fn flush_line<'a>(lines: &mut Vec<Line<'a>>, line: &mut Vec<Span<'a>>) {
     lines.push(Line::from_iter(line.clone()));
     line.clear();
 }
 
 impl MarkdownDocument {
-    fn get_lines(&self) -> Vec<Line> {
+    fn get_lines(&self, context: &NoteContext) -> Vec<Line> {
         let mut lines = vec![];
         let mut line = vec![];
 
@@ -30,7 +29,7 @@ impl MarkdownDocument {
 
         let mut last_tag: Option<TagEnd> = None;
 
-        for event in self.get_parser() {
+        for event in self.parser() {
             match event {
                 Event::Text(text) => {
                     let mut style = Style::new();
@@ -48,11 +47,7 @@ impl MarkdownDocument {
                     }
                     if inside_link {
                         style = style.cyan();
-                        if self
-                            .selected_link
-                            .as_ref()
-                            .is_some_and(|LinkRef { index, .. }| *index == link_index)
-                        {
+                        if context.link_selection_index == link_index {
                             style = style.reversed();
                         }
                     }
@@ -155,41 +150,36 @@ impl MarkdownDocument {
 
 pub struct MarkdownView {
     document: MarkdownDocument,
-    scroll_lines: i16,
+    context: NoteContext,
 }
 
 impl MarkdownView {
-    pub fn new(document: MarkdownDocument) -> Self {
-        MarkdownView {
-            document,
-            scroll_lines: 0,
-        }
-    }
-    pub fn scroll(mut self, scroll_lines: i16) -> Self {
-        self.scroll_lines = scroll_lines;
-        self
+    pub fn new(document: MarkdownDocument, context: NoteContext) -> Self {
+        MarkdownView { document, context }
     }
 }
 
 impl Widget for &MarkdownView {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        Paragraph::new(self.document.get_lines())
+        Paragraph::new(self.document.get_lines(&self.context))
             .wrap(Wrap { trim: false })
-            .scroll((self.scroll_lines.try_into().unwrap(), 0))
+            .scroll((self.context.scroll_lines.try_into().unwrap(), 0))
             .render(area, buf);
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::repository::mock::MockRepository;
+
     use super::*;
     use insta::assert_snapshot;
     use ratatui::{Terminal, backend::TestBackend};
 
     #[test]
     fn test_render_view() {
-        let view = MarkdownView::new(
-            MarkdownDocument::new("
+        let mut repo = MockRepository::new();
+        let note = repo.insert_note("Note", "
 ---
 info: \"This metadata block should not be visible.\"
 ---
@@ -217,8 +207,9 @@ This is another paragraph of text. It is long enough to be wrapped, yet every wo
 [[This paragraph]] has a few [[Link|links]], which can be [selected](https://en.wikipedia.org/wiki/Selection_(user_interface)).
 
 This should not be visible.
-        "
-        ));
+        ");
+
+        let view = MarkdownView::new(MarkdownDocument::new(&note.body), NoteContext::new(note));
         let mut terminal = Terminal::new(TestBackend::new(80, 22)).unwrap();
         terminal
             .draw(|frame| frame.render_widget(&view, frame.area()))

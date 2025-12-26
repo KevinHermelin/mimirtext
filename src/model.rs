@@ -4,7 +4,7 @@ pub mod search_window;
 use std::ops::Range;
 
 use crate::{
-    markdown::LinkTarget,
+    document::LinkTarget,
     model::{
         note_pane::{NotePaneMessage, NotePaneModel},
         search_window::{SearchWindowMessage, SearchWindowModel},

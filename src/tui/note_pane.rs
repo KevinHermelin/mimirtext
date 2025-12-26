@@ -9,7 +9,7 @@ use ratatui::{
 use unicode_width::UnicodeWidthStr;
 
 use crate::{
-    model::note_pane::{Document, NotePaneModel, NotePaneState, ViewMode},
+    model::note_pane::{DocumentType, NotePaneModel, NotePaneState, ViewMode},
     tui::{WidgetWithCursor, markdown_view::MarkdownView, utils::NonIdealState},
 };
 
@@ -161,18 +161,10 @@ impl WidgetWithCursor for NotePaneModel {
                 }
 
                 match document {
-                    Document::Markdown(mut document) => {
-                        // TODO: There are several problems here. For one, this is untested.
-                        // It is also weird that we set the selected_link during render
-                        // and from the names alone we are not giving any clues that context.selected_link
-                        // does not retrieve that information from the document.
-                        document.selected_link = context.selected_link();
-
-                        MarkdownView::new(document)
-                            .scroll(context.scroll_lines as i16)
-                            .render(area, buf);
+                    DocumentType::Markdown(document) => {
+                        MarkdownView::new(document, context.clone()).render(area, buf);
                     }
-                    Document::Source(source) => {
+                    DocumentType::Source(source) => {
                         Paragraph::new(self.clean_text(&source))
                             .scroll((context.scroll_lines as u16, 0))
                             .wrap(Wrap { trim: false })

@@ -5,8 +5,8 @@ mod search_window;
 pub mod utils;
 
 use crate::{
+    document::LinkTarget,
     graph::{RepositoryGraph, SearchResult},
-    markdown::LinkTarget,
     model::{
         Command, Message, Model, RunningState, Update, note_pane::NotePaneMessage,
         search_window::SearchWindowMessage,

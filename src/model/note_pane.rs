@@ -1,5 +1,5 @@
 use crate::{
-    markdown::{LinkRef, MarkdownDocument},
+    document::{Document, LinkTarget, markdown::MarkdownDocument},
     model::{ClampAdd, Command, Update},
     repository::{NoteKey, NoteSnapshot},
     text_input::{Completion, InputOperation, TextInput, TextInputConfig},
@@ -17,7 +17,7 @@ pub struct NoteContext {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum Document {
+pub enum DocumentType {
     Markdown(MarkdownDocument),
     Source(String),
 }
@@ -42,11 +42,11 @@ impl NoteContext {
             .is_some_and(|editor| editor.text() != self.note.body)
     }
 
-    pub fn document(&self) -> Document {
+    pub fn document(&self) -> DocumentType {
         if self.note.extension == Some(String::from("md")) {
-            Document::Markdown(MarkdownDocument::new(&self.note.body))
+            DocumentType::Markdown(MarkdownDocument::new(&self.note.body))
         } else {
-            Document::Source(self.note.body.clone())
+            DocumentType::Source(self.note.body.clone())
         }
     }
 
@@ -56,20 +56,20 @@ impl NoteContext {
 
     fn max_link_selection(&self) -> isize {
         match self.document() {
-            Document::Markdown(markdown_document) => {
-                markdown_document.get_links().len().saturating_sub(1) as isize
+            DocumentType::Markdown(markdown_document) => {
+                markdown_document.links().len().saturating_sub(1) as isize
             }
-            Document::Source(_) => 0,
+            DocumentType::Source(_) => 0,
         }
     }
 
-    pub fn selected_link(&self) -> Option<LinkRef> {
+    pub fn selected_link(&self) -> Option<LinkTarget> {
         match self.document() {
-            Document::Markdown(markdown_document) => markdown_document
-                .get_links()
+            DocumentType::Markdown(markdown_document) => markdown_document
+                .links()
                 .get(self.link_selection_index as usize)
                 .cloned(),
-            Document::Source(_) => None,
+            DocumentType::Source(_) => None,
         }
     }
 }
@@ -108,8 +108,8 @@ impl NotePaneModel {
             }
 
             return match context.document() {
-                Document::Markdown(_) => ViewMode::Browsing,
-                Document::Source(_) => ViewMode::Source,
+                DocumentType::Markdown(_) => ViewMode::Browsing,
+                DocumentType::Source(_) => ViewMode::Source,
             };
         }
         ViewMode::None
@@ -240,7 +240,7 @@ impl Update<NotePaneMessage> for NotePaneModel {
             if let NotePaneMessage::FollowLink = message {
                 command = context
                     .selected_link()
-                    .map(|link_ref| Command::FollowLink(link_ref.target))
+                    .map(Command::FollowLink)
                     .unwrap_or(Command::None);
             }
 
@@ -275,7 +275,7 @@ pub enum NotePaneMessage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{markdown::LinkTarget, repository::mock::MockRepository};
+    use crate::{document::LinkTarget, repository::mock::MockRepository};
 
     #[test]
     fn test_default_model() {
@@ -335,7 +335,7 @@ mod tests {
             NoteContext::new(MockRepository::new().insert_note("note.md", "This is a note"));
         assert_eq!(
             context.document(),
-            Document::Markdown(MarkdownDocument::new("This is a note"))
+            DocumentType::Markdown(MarkdownDocument::new("This is a note"))
         );
 
         let context = NoteContext::new(
@@ -343,7 +343,7 @@ mod tests {
         );
         assert_eq!(
             context.document(),
-            Document::Source(String::from("This is also a note"))
+            DocumentType::Source(String::from("This is also a note"))
         );
     }
 
