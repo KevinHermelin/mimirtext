@@ -33,7 +33,7 @@ impl Default for TextInputConfig {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub struct TextInput {
     current: String,
     cursor_pos: usize,
@@ -52,13 +52,7 @@ impl From<&str> for TextInput {
 
 impl TextInput {
     pub fn new() -> Self {
-        Self {
-            current: String::new(),
-            cursor_pos: 0,
-            desired_column: 0,
-            completions: None,
-            config: TextInputConfig::default(),
-        }
+        Self::default()
     }
     #[cfg(test)]
     pub fn new_with(text: &str, cursor_pos: usize) -> Self {
