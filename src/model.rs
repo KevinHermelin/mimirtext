@@ -119,7 +119,7 @@ impl Update<Message> for Model {
 mod tests {
     use crate::{
         graph::SearchResult,
-        repository::{MockRepository, Repository},
+        repository::{Repository, mock::MockRepository},
         text_input::InputOperation,
     };
 

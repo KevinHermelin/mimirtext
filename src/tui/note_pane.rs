@@ -190,7 +190,7 @@ mod tests {
     use super::*;
     use crate::{
         model::{Update, note_pane::NotePaneMessage},
-        repository::{MockRepository, Repository},
+        repository::{Repository, mock::MockRepository},
         text_input::{Completion, InputOperation},
         tui::GraphBuildProgress,
     };

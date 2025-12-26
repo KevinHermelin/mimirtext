@@ -4,6 +4,17 @@ mod note_pane;
 mod search_window;
 pub mod utils;
 
+use crate::{
+    graph::{RepositoryGraph, SearchResult},
+    markdown::LinkTarget,
+    model::{
+        Command, Message, Model, RunningState, Update, note_pane::NotePaneMessage,
+        search_window::SearchWindowMessage,
+    },
+    repository::{NoteKey, NoteSnapshot, Repository, folder::FolderRepository, resolve_label},
+    text_input::Completion,
+    tui::{input::KeyHandler, utils::center},
+};
 use clap::{Parser, command};
 use color_eyre::Result;
 use ratatui::{
@@ -31,18 +42,6 @@ use std::{
     },
     thread,
     time::Duration,
-};
-
-use crate::{
-    graph::{RepositoryGraph, SearchResult},
-    markdown::LinkTarget,
-    model::{
-        Command, Message, Model, RunningState, Update, note_pane::NotePaneMessage,
-        search_window::SearchWindowMessage,
-    },
-    repository::{FolderRepository, NoteKey, NoteSnapshot, Repository},
-    text_input::Completion,
-    tui::{input::KeyHandler, utils::center},
 };
 
 #[derive(Parser)]
@@ -147,7 +146,7 @@ impl App {
                     LinkTarget::Note(target) => {
                         let repository = self.repository.read().unwrap();
 
-                        let id = repository.resolve_reference(&target);
+                        let id = resolve_label(&target);
                         let note = repository.note(&id)?;
                         message = Message::NotePane(NotePaneMessage::PushNote(note));
                     }
@@ -411,7 +410,7 @@ impl WidgetWithCursor for Model {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::repository::MockRepository;
+    use crate::repository::mock::MockRepository;
     use insta::assert_snapshot;
     use ratatui::{Terminal, backend::TestBackend};
 

@@ -76,9 +76,8 @@ impl RepositoryGraph {
 
 #[cfg(test)]
 mod tests {
-    use crate::repository::MockRepository;
-
     use super::*;
+    use crate::repository::mock::MockRepository;
 
     #[test]
     fn test_label_search() {

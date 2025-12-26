@@ -83,7 +83,7 @@ impl Update<SearchWindowMessage> for SearchWindowModel {
 #[cfg(test)]
 mod tests {
     use crate::{
-        repository::{MockRepository, Repository},
+        repository::{Repository, mock::MockRepository},
         text_input::Unit,
     };
 

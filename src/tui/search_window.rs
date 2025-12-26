@@ -75,19 +75,18 @@ impl WidgetWithCursor for SearchWindowModel {
 
 #[cfg(test)]
 mod tests {
-    use insta::assert_snapshot;
-    use ratatui::{Terminal, backend::TestBackend, layout::Position};
-
     use crate::{
         graph::SearchResult,
         model::{
             Update,
             search_window::{SearchWindowMessage, SearchWindowModel},
         },
-        repository::{MockRepository, Repository},
+        repository::{Repository, mock::MockRepository},
         text_input::TextInput,
         tui::WidgetWithCursor,
     };
+    use insta::assert_snapshot;
+    use ratatui::{Terminal, backend::TestBackend, layout::Position};
 
     #[test]
     fn test_default() {

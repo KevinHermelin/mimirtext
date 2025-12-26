@@ -274,9 +274,8 @@ pub enum NotePaneMessage {
 
 #[cfg(test)]
 mod tests {
-    use crate::{markdown::LinkTarget, repository::MockRepository};
-
     use super::*;
+    use crate::{markdown::LinkTarget, repository::mock::MockRepository};
 
     #[test]
     fn test_default_model() {
