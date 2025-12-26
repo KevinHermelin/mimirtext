@@ -1,5 +1,5 @@
 use crate::{
-    document::{Document, LinkTarget, markdown::MarkdownDocument},
+    document::{DocumentType, LinkTarget},
     model::{ClampAdd, Command, Update},
     repository::{NoteKey, NoteSnapshot},
     text_input::{Completion, InputOperation, TextInput, TextInputConfig},
@@ -14,12 +14,6 @@ pub struct NoteContext {
     pub link_selection_index: isize,
     /// Optionally, a `TextInput` instance holding the edited state of this note.
     pub editor: Option<TextInput>,
-}
-
-#[derive(Debug, PartialEq)]
-pub enum DocumentType {
-    Markdown(MarkdownDocument),
-    Source(String),
 }
 
 impl NoteContext {
@@ -42,35 +36,26 @@ impl NoteContext {
             .is_some_and(|editor| editor.text() != self.note.body)
     }
 
-    pub fn document(&self) -> DocumentType {
-        if self.note.extension == Some(String::from("md")) {
-            DocumentType::Markdown(MarkdownDocument::new(&self.note.body))
-        } else {
-            DocumentType::Source(self.note.body.clone())
-        }
-    }
-
     fn max_scroll(&self) -> isize {
         self.note.body.lines().count().saturating_sub(1) as isize
     }
 
     fn max_link_selection(&self) -> isize {
-        match self.document() {
-            DocumentType::Markdown(markdown_document) => {
-                markdown_document.links().len().saturating_sub(1) as isize
-            }
-            DocumentType::Source(_) => 0,
-        }
+        self.note
+            .parse()
+            .as_document()
+            .links()
+            .len()
+            .saturating_sub(1) as isize
     }
 
     pub fn selected_link(&self) -> Option<LinkTarget> {
-        match self.document() {
-            DocumentType::Markdown(markdown_document) => markdown_document
-                .links()
-                .get(self.link_selection_index as usize)
-                .cloned(),
-            DocumentType::Source(_) => None,
-        }
+        self.note
+            .parse()
+            .as_document()
+            .links()
+            .get(self.link_selection_index as usize)
+            .cloned()
     }
 }
 
@@ -107,7 +92,7 @@ impl NotePaneModel {
                 return ViewMode::Edit;
             }
 
-            return match context.document() {
+            return match context.note.parse() {
                 DocumentType::Markdown(_) => ViewMode::Browsing,
                 DocumentType::Source(_) => ViewMode::Source,
             };
@@ -327,24 +312,6 @@ mod tests {
 
         // The note pane should go into source mode because the note has no supported extension.
         assert_eq!(model.view_mode(), ViewMode::Source);
-    }
-
-    #[test]
-    fn test_document() {
-        let context =
-            NoteContext::new(MockRepository::new().insert_note("note.md", "This is a note"));
-        assert_eq!(
-            context.document(),
-            DocumentType::Markdown(MarkdownDocument::new("This is a note"))
-        );
-
-        let context = NoteContext::new(
-            MockRepository::new().insert_note("note without extension", "This is also a note"),
-        );
-        assert_eq!(
-            context.document(),
-            DocumentType::Source(String::from("This is also a note"))
-        );
     }
 
     #[test]

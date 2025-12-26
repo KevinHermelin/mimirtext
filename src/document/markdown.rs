@@ -1,6 +1,8 @@
+use crate::{
+    document::{Document, LinkTarget},
+    repository::NoteSnapshot,
+};
 use pulldown_cmark::{Event, LinkType, Options, Parser, Tag};
-
-use crate::document::{Document, LinkTarget};
 
 #[derive(Debug, PartialEq)]
 pub struct MarkdownDocument {
@@ -25,6 +27,16 @@ impl Document for MarkdownDocument {
             })
             .collect()
     }
+
+    fn try_new(note: &NoteSnapshot) -> Option<Self> {
+        if note.extension == Some(String::from("md")) {
+            Some(Self {
+                content: note.body.to_owned(),
+            })
+        } else {
+            None
+        }
+    }
 }
 
 impl MarkdownDocument {
@@ -41,7 +53,27 @@ impl MarkdownDocument {
 
 #[cfg(test)]
 mod tests {
+    use crate::repository::mock::MockRepository;
+
     use super::*;
+
+    #[test]
+    fn test_try_from() {
+        let mut repo = MockRepository::new();
+
+        let markdown_note = repo.insert_note("markdown.md", "Some note");
+        let other_extension_note = repo.insert_note("other extension.html", "Some note");
+        let no_extension_note = repo.insert_note("no extension", "Some note");
+
+        assert_eq!(
+            MarkdownDocument::try_new(&markdown_note),
+            Some(MarkdownDocument {
+                content: String::from("Some note")
+            })
+        );
+        assert_eq!(MarkdownDocument::try_new(&other_extension_note), None);
+        assert_eq!(MarkdownDocument::try_new(&no_extension_note), None);
+    }
 
     #[test]
     fn test_get_links() {

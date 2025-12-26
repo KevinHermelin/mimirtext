@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use rapidfuzz::distance::jaro_winkler;
 
 use crate::{
-    document::{Document, LinkTarget, markdown::MarkdownDocument},
+    document::LinkTarget,
     repository::{NoteKey, NoteSnapshot},
 };
 
@@ -31,15 +31,15 @@ impl RepositoryGraph {
     }
 
     pub fn register_note(mut self, note: &NoteSnapshot) -> Self {
-        let NoteSnapshot { key, body, .. } = note.to_owned();
+        let key = note.key.clone();
 
-        let NoteKey(repo_id, _) = key.clone();
+        let NoteKey(repo_id, _) = note.key.clone();
 
         // Register this note.
         self.labels.insert(key);
 
         // Register outgoing links.
-        let outgoing = MarkdownDocument::new(&body).links();
+        let outgoing = note.parse().as_document().links();
         for link in outgoing {
             if let LinkTarget::Note(title) = link {
                 let key = NoteKey(repo_id.clone(), title + ".md");

@@ -9,7 +9,8 @@ use ratatui::{
 use unicode_width::UnicodeWidthStr;
 
 use crate::{
-    model::note_pane::{DocumentType, NotePaneModel, NotePaneState, ViewMode},
+    document::DocumentType,
+    model::note_pane::{NotePaneModel, NotePaneState, ViewMode},
     tui::{WidgetWithCursor, markdown_view::MarkdownView, utils::NonIdealState},
 };
 
@@ -86,7 +87,7 @@ impl WidgetWithCursor for NotePaneModel {
             }
             NotePaneState::Loading(_) => NonIdealState::new("Loading note", "").render(area, buf),
             NotePaneState::With(context) => {
-                let document = context.document();
+                let document = context.note.parse();
 
                 if let Some(editor) = &context.editor {
                     let max_cols = area.width;
@@ -164,8 +165,8 @@ impl WidgetWithCursor for NotePaneModel {
                     DocumentType::Markdown(document) => {
                         MarkdownView::new(document, context.clone()).render(area, buf);
                     }
-                    DocumentType::Source(source) => {
-                        Paragraph::new(self.clean_text(&source))
+                    DocumentType::Source(document) => {
+                        Paragraph::new(self.clean_text(&document.content))
                             .scroll((context.scroll_lines as u16, 0))
                             .wrap(Wrap { trim: false })
                             .render(area, buf);
