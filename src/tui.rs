@@ -182,6 +182,7 @@ impl App {
                     repository.commit_note(note)?;
 
                     let note = repository.note(note_id)?;
+                    graph.write().unwrap().register_note(&note);
                     message = Message::NotePane(NotePaneMessage::UpdateNote(note));
                 }
                 Command::RequestLinkCompletion(range, text) => {
