@@ -30,7 +30,7 @@ impl RepositoryGraph {
         }
     }
 
-    pub fn register_note(mut self, note: &NoteSnapshot) -> Self {
+    pub fn register_note(&mut self, note: &NoteSnapshot) -> &Self {
         let key = note.key.clone();
 
         let NoteKey(repo_id, _) = note.key.clone();
@@ -82,12 +82,12 @@ mod tests {
     #[test]
     fn test_label_search() {
         let mut repo = MockRepository::new();
-        let graph = RepositoryGraph::new();
+        let mut graph = RepositoryGraph::new();
 
         assert_eq!(graph.search("note"), []);
 
         let note = repo.insert_note("note.md", "This points to [[another note]]. Two links to make sure that it removes duplicates [[another note]].");
-        let graph = graph.register_note(&note);
+        graph.register_note(&note);
 
         let note_key = note.key;
         let another_note_key = NoteKey(note_key.clone().0, String::from("another note.md"));
@@ -103,12 +103,12 @@ mod tests {
     #[test]
     fn test_label_search_empty_query() {
         let mut repo = MockRepository::new();
-        let graph = RepositoryGraph::new();
+        let mut graph = RepositoryGraph::new();
 
         assert_eq!(graph.search(""), []);
 
         let note = repo.insert_note("note.md", "This points to [[another note]]. Two links to make sure that it removes duplicates [[another note]].");
-        let graph = graph.register_note(&note);
+        graph.register_note(&note);
 
         let note_key: NoteKey = note.key;
         let another_note_key = NoteKey(note_key.clone().0, String::from("another note.md"));

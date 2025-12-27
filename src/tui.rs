@@ -6,7 +6,7 @@ pub mod utils;
 
 use crate::{
     document::LinkTarget,
-    graph::{RepositoryGraph, SearchResult},
+    graph::RepositoryGraph,
     model::{
         Command, Message, Model, RunningState, Update, note_pane::NotePaneMessage,
         search_window::SearchWindowMessage,
@@ -100,15 +100,16 @@ impl App {
         Ok(App::new(Arc::new(RwLock::new(repo)), note))
     }
     fn run(&mut self, terminal: &mut Terminal<impl Backend>) -> Result<()> {
-        let (query_tx, query_rx) = mpsc::channel();
-        let (query_result_tx, query_result_rx) = mpsc::channel();
         let (graph_progress_tx, graph_progress_rx) = mpsc::channel();
+
+        let graph = Arc::new(RwLock::new(RepositoryGraph::new()));
 
         {
             let repository = Arc::clone(&self.repository);
+            let graph = Arc::clone(&graph);
             thread::spawn(move || {
                 // An error in the index thread should make the main thread panic.
-                build_graph(repository, query_rx, query_result_tx, graph_progress_tx).unwrap();
+                build_graph(repository, graph, graph_progress_tx).unwrap();
             });
         }
 
@@ -163,8 +164,7 @@ impl App {
                     message = Message::NotePane(NotePaneMessage::UpdateNote(note));
                 }
                 Command::SearchQuery(query) => {
-                    let results = send_query(query, &query_tx, &query_result_rx)?;
-
+                    let results = graph.read().unwrap().search(&query);
                     message = Message::SearchWindow(SearchWindowMessage::UpdateResults(results));
                 }
                 Command::OpenNote(key) => {
@@ -185,7 +185,7 @@ impl App {
                     message = Message::NotePane(NotePaneMessage::UpdateNote(note));
                 }
                 Command::RequestLinkCompletion(range, text) => {
-                    let results = send_query(text, &query_tx, &query_result_rx)?;
+                    let results = graph.read().unwrap().search(&text);
 
                     let completions = results
                         .iter()
@@ -292,36 +292,11 @@ impl GraphBuildProgress {
     }
 }
 
-fn handle_query(
-    graph: &RepositoryGraph,
-    query: String,
-    query_result_tx: &Sender<Vec<SearchResult>>,
-) {
-    let results = graph.search(&query);
-    query_result_tx
-        .send(results)
-        .expect("should be able to send query result");
-}
-
-fn send_query(
-    query: String,
-    query_tx: &Sender<String>,
-    query_result_rx: &Receiver<Vec<SearchResult>>,
-) -> Result<Vec<SearchResult>> {
-    query_tx.send(query)?;
-    let results = query_result_rx.recv()?;
-
-    Ok(results)
-}
-
 fn build_graph(
     repository: Arc<RwLock<dyn Repository + Send + Sync + 'static>>,
-    query_rx: Receiver<String>,
-    query_result_tx: Sender<Vec<SearchResult>>,
+    graph: Arc<RwLock<RepositoryGraph>>,
     graph_progress_tx: Sender<GraphBuildProgress>,
 ) -> Result<(), GraphThreadError> {
-    let mut graph = RepositoryGraph::new();
-
     // Important that repository is not locked for later.
     let repo_id = repository.read().unwrap().id().to_string();
     let queue = repository
@@ -334,11 +309,6 @@ fn build_graph(
     let notes_count = queue.len();
 
     for (i, key) in queue.iter().enumerate() {
-        // Non-blocking while performing work.
-        if let Ok(query) = query_rx.try_recv() {
-            handle_query(&graph, query, &query_result_tx);
-        }
-
         let NoteKey(_, id) = key.clone();
 
         let note = repository
@@ -350,17 +320,12 @@ fn build_graph(
         // Silently ignoring all files which cannot be read. Otherwise, this would panic on pictures in the repo.
         // TODO: This should be better handled.
         if let Ok(note) = note {
-            graph = graph.register_note(&note);
+            graph.write().unwrap().register_note(&note);
         }
 
         graph_progress_tx
             .send(GraphBuildProgress(i + 1, notes_count))
             .expect("should be able to send graph progress");
-    }
-
-    // Blocking.
-    for query in query_rx {
-        handle_query(&graph, query, &query_result_tx);
     }
 
     Ok(())
