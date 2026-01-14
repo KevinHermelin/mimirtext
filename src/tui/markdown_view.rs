@@ -25,9 +25,12 @@ impl MarkdownDocument {
         let mut inside_emphasis = false;
         let mut inside_link = false;
         let mut inside_metadata = false;
+        let mut inside_code_block = false;
         let mut list_level = 0;
 
         let mut last_tag: Option<TagEnd> = None;
+
+        let code_style = Style::new().on_dark_gray();
 
         for event in self.parser() {
             match event {
@@ -51,6 +54,9 @@ impl MarkdownDocument {
                             style = style.reversed();
                         }
                     }
+                    if inside_code_block {
+                        style = code_style;
+                    }
                     // There might be newlines in the text.
                     for (i, part) in text.split('\n').enumerate() {
                         // First line in this text event might be a continuation of a previous text event.
@@ -59,6 +65,9 @@ impl MarkdownDocument {
                         }
                         line.push(Span::styled(part.to_owned(), style));
                     }
+                }
+                Event::Code(code) => {
+                    line.push(Span::styled(code.to_owned(), code_style));
                 }
                 Event::SoftBreak => {
                     flush_line(&mut lines, &mut line);
@@ -78,6 +87,9 @@ impl MarkdownDocument {
                         if let Some(TagEnd::Paragraph) = last_tag {
                             flush_line(&mut lines, &mut line);
                         }
+                    }
+                    Tag::CodeBlock(_) => {
+                        inside_code_block = true;
                     }
                     Tag::Strong => {
                         inside_strong = true;
@@ -111,6 +123,9 @@ impl MarkdownDocument {
                             flush_line(&mut lines, &mut line);
                             flush_line(&mut lines, &mut line);
                             inside_heading = false;
+                        }
+                        TagEnd::CodeBlock => {
+                            inside_code_block = false;
                         }
                         TagEnd::Paragraph => {
                             flush_line(&mut lines, &mut line);
