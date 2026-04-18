@@ -1,9 +1,9 @@
 use crate::{
     document::{DocumentType, LinkTarget},
+    graph::builder::GraphBuildProgress,
     model::{ClampAdd, Command, Update},
     repository::{NoteKey, NoteSnapshot},
     text_input::{Completion, InputOperation, TextInput, TextInputConfig},
-    tui::GraphBuildProgress,
 };
 
 /// A struct representing the state of a note opened for reading and optionally writing.

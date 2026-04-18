@@ -1,11 +1,11 @@
-use std::collections::HashSet;
-
-use rapidfuzz::distance::jaro_winkler;
+pub mod builder;
 
 use crate::{
     document::LinkTarget,
     repository::{NoteKey, NoteSnapshot},
 };
+use rapidfuzz::distance::jaro_winkler;
+use std::collections::HashSet;
 
 pub struct RepositoryGraph {
     labels: HashSet<NoteKey>,
