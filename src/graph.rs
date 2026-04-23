@@ -7,6 +7,7 @@ use crate::{
 use rapidfuzz::distance::jaro_winkler;
 use std::collections::HashSet;
 
+#[derive(Debug, PartialEq)]
 pub struct RepositoryGraph {
     labels: HashSet<NoteKey>,
 }

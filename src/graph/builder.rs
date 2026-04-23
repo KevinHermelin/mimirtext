@@ -120,12 +120,41 @@ fn build_graph(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::repository::mock::MockRepository;
+    use std::sync::{Arc, mpsc};
 
     #[test]
-    fn test_graph_build_progress_percentage() {
-        assert_eq!(GraphBuildProgress(10, 100).percentage(), 0.1);
-        assert_eq!(GraphBuildProgress(5, 10).percentage(), 0.5);
-        assert_eq!(GraphBuildProgress(1, 4).percentage(), 0.25);
+    fn test_graph_build() {
+        let mut repo = MockRepository::new();
+        let note_a = repo.insert_note("note a", "");
+        let note_b = repo.insert_note("note b", "");
+        let note_c = repo.insert_note("note c", "");
+
+        let graph = Arc::new(RwLock::new(RepositoryGraph::new()));
+
+        let (graph_progress_tx, graph_progress_rx) = mpsc::channel();
+        create_graph_builder(
+            Arc::new(RwLock::new(repo)),
+            Arc::clone(&graph),
+            graph_progress_tx,
+        );
+
+        assert!(
+            graph_progress_rx.iter().eq([
+                GraphBuildProgress::InProgress(1.0 / 3.0),
+                GraphBuildProgress::InProgress(2.0 / 3.0),
+                GraphBuildProgress::Idle
+            ]
+            .iter()
+            .cloned())
+        );
+
+        let mut expected = RepositoryGraph::new();
+        expected.register_note(&note_a);
+        expected.register_note(&note_b);
+        expected.register_note(&note_c);
+
+        assert_eq!(*graph.read().unwrap(), expected);
     }
 
     #[test]
