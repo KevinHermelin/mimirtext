@@ -10,6 +10,7 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::{
     document::DocumentType,
+    graph::builder::GraphBuildProgress,
     model::note_pane::{NotePaneModel, NotePaneState, ViewMode},
     tui::{WidgetWithCursor, markdown_view::MarkdownView, utils::NonIdealState},
 };
@@ -38,8 +39,8 @@ impl NotePaneModel {
     fn render_block(&self, area: Rect, buf: &mut Buffer) -> Rect {
         let mut block = Block::bordered().border_set(border::THICK);
 
-        if let Some(progress) = self.graph_build_progress.clone() {
-            let progress_text = format!(" building graph ({:.0}%) ", progress.percentage() * 100.0);
+        if let GraphBuildProgress::InProgress(progress) = self.graph_progress {
+            let progress_text = format!(" building graph ({:.0}%) ", progress * 100.0);
             block = block.title_top(Line::from(progress_text).dim().right_aligned());
         }
 
@@ -214,7 +215,9 @@ mod tests {
     #[test]
     fn test_graph_building() {
         let model = NotePaneModel::default();
-        let (model, _) = model.update(NotePaneMessage::GraphUpdate(GraphBuildProgress(51, 200)));
+        let (model, _) = model.update(NotePaneMessage::GraphUpdate(
+            GraphBuildProgress::InProgress(0.255),
+        ));
 
         let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
         terminal

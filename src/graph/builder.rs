@@ -52,24 +52,29 @@ pub fn create_graph_builder(
 }
 
 /// Represents the progress of a graph building job.
-///
-/// First index is the number of files indexed.
-/// Second index is the total number of files to index.
-#[derive(Clone, Debug, PartialEq)]
-pub struct GraphBuildProgress(pub usize, pub usize);
+#[derive(Debug, Default, Clone, PartialEq)]
+pub enum GraphBuildProgress {
+    /// Graph building has not started or is finished.
+    #[default]
+    Idle,
+
+    /// Graph building is still ongoing.
+    InProgress(f32),
+}
 
 impl GraphBuildProgress {
-    /// Calculates percentage done, as a float between 0.0 and 1.0.
-    pub fn percentage(&self) -> f32 {
-        let GraphBuildProgress(done, total) = self;
-        let done: f32 = *done as f32;
-        let total: f32 = *total as f32;
-        done / total
-    }
-    /// `true` if the job is complete, i.e. all files have been indexed.
-    pub fn done(&self) -> bool {
-        let GraphBuildProgress(done, total) = self;
-        done == total
+    /// Creates a state from item count.
+    ///
+    /// It will be InProgress as long as done != total.
+    /// Otherwise, this returns Idle.
+    fn from_count(done: usize, total: usize) -> Self {
+        if done == total {
+            return Self::Idle;
+        }
+
+        let done = done as f32;
+        let total = total as f32;
+        Self::InProgress(done / total)
     }
 }
 
@@ -105,7 +110,7 @@ fn build_graph(
         }
 
         graph_progress_tx
-            .send(GraphBuildProgress(i + 1, notes_count))
+            .send(GraphBuildProgress::from_count(i + 1, notes_count))
             .expect("should be able to send graph progress");
     }
 
@@ -124,10 +129,22 @@ mod tests {
     }
 
     #[test]
-    fn test_graph_build_progress_done() {
-        assert!(!GraphBuildProgress(10, 100).done());
-        assert!(!GraphBuildProgress(0, 5).done());
-        assert!(!GraphBuildProgress(99, 100).done());
-        assert!(GraphBuildProgress(10, 10).done());
+    fn test_graph_build_progress_from_count() {
+        assert!(matches!(
+            GraphBuildProgress::from_count(10, 100),
+            GraphBuildProgress::InProgress(0.1)
+        ));
+        assert!(matches!(
+            GraphBuildProgress::from_count(5, 10),
+            GraphBuildProgress::InProgress(0.5)
+        ));
+        assert!(matches!(
+            GraphBuildProgress::from_count(1, 4),
+            GraphBuildProgress::InProgress(0.25)
+        ));
+        assert!(matches!(
+            GraphBuildProgress::from_count(2, 2),
+            GraphBuildProgress::Idle
+        ));
     }
 }

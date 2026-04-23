@@ -71,7 +71,7 @@ pub enum NotePaneState {
 pub struct NotePaneModel {
     pub state: NotePaneState,
     pub history: Vec<NoteKey>,
-    pub graph_build_progress: Option<GraphBuildProgress>,
+    pub graph_progress: GraphBuildProgress,
 }
 
 #[derive(Debug, PartialEq)]
@@ -147,11 +147,7 @@ impl Update<NotePaneMessage> for NotePaneModel {
         }
 
         if let NotePaneMessage::GraphUpdate(graph_progress) = &message {
-            model.graph_build_progress = if graph_progress.done() {
-                None
-            } else {
-                Some(graph_progress.to_owned())
-            }
+            model.graph_progress = graph_progress.clone();
         }
 
         if let NotePaneState::With(context) = &mut model.state {
@@ -269,7 +265,7 @@ mod tests {
             NotePaneModel {
                 state: NotePaneState::Empty,
                 history: vec![],
-                graph_build_progress: None
+                graph_progress: GraphBuildProgress::Idle
             }
         );
     }
@@ -577,25 +573,14 @@ mod tests {
     #[test]
     fn test_graph_update() {
         let model = NotePaneModel::default();
+        assert_eq!(model.graph_progress, GraphBuildProgress::Idle);
 
-        assert_eq!(model.graph_build_progress, None);
+        let (model, _) = model.update(NotePaneMessage::GraphUpdate(
+            GraphBuildProgress::InProgress(0.1),
+        ));
+        assert_eq!(model.graph_progress, GraphBuildProgress::InProgress(0.1));
 
-        let (model, _) = model.update(NotePaneMessage::GraphUpdate(GraphBuildProgress(10, 100)));
-
-        assert_eq!(
-            model.graph_build_progress,
-            Some(GraphBuildProgress(10, 100))
-        );
-
-        let (model, _) = model.update(NotePaneMessage::GraphUpdate(GraphBuildProgress(99, 100)));
-
-        assert_eq!(
-            model.graph_build_progress,
-            Some(GraphBuildProgress(99, 100))
-        );
-
-        let (model, _) = model.update(NotePaneMessage::GraphUpdate(GraphBuildProgress(100, 100)));
-
-        assert_eq!(model.graph_build_progress, None);
+        let (model, _) = model.update(NotePaneMessage::GraphUpdate(GraphBuildProgress::Idle));
+        assert_eq!(model.graph_progress, GraphBuildProgress::Idle);
     }
 }
