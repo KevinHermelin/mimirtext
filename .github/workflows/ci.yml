@@ -1,0 +1,20 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install nix
+      uses: cachix/install-nix-action@ab739621df7a23f52766f9ccc97f38da6b7af14f
+    - name: Run tests
+      run: nix build .#test
