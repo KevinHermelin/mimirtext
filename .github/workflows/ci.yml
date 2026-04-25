@@ -16,9 +16,5 @@ jobs:
     - uses: actions/checkout@v4
     - name: Install nix
       uses: cachix/install-nix-action@ab739621df7a23f52766f9ccc97f38da6b7af14f
-    - name: Enter dev shell
-      run: nix develop
-    - name: Build project
-      run: cargo build
     - name: Run tests
-      run: cargo test --verbose
+      run: nix build .#test
