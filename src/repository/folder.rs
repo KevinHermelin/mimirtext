@@ -1,5 +1,6 @@
 use crate::repository::{NoteKey, NoteSnapshot, Repository, UpstreamState};
 use std::{
+    env,
     fs::{self, DirEntry},
     io::{self, ErrorKind, Write},
     path::{Path, PathBuf},
@@ -33,27 +34,28 @@ impl FolderRepository {
     /// the path points to a file, this will return `Ok((repo, Some(note))` where
     /// `repo` is the first parent directory of `note`.
     pub fn open_path(path: &Path) -> io::Result<(Self, Option<NoteSnapshot>)> {
-        let path = path.canonicalize()?;
-        if path.is_file() {
-            let repo_path = path
-                .parent()
-                .ok_or(io::Error::from(ErrorKind::NotADirectory))?;
-
-            let repo = Self::new(repo_path)?;
-
-            let note_id = title_from_path(&path)?.to_owned();
-            let note = repo.note(&note_id)?;
-
-            return Ok((repo, Some(note)));
-        }
         if path.is_dir() {
-            let repo = Self::new(&path)?;
+            let repo = Self::new(path)?;
             return Ok((repo, None));
         }
-        Err(io::Error::new(
-            io::ErrorKind::Other,
-            "Path is neither a note nor a repository",
-        ))
+        // Otherwise, assume that the path points to a file which might or might not exist.
+        let parent_path = path
+            .parent()
+            .ok_or(io::Error::from(ErrorKind::NotADirectory))?;
+
+        // Parent path is not canonicalized, and is possibly empty.
+        let repo_path = if parent_path.as_os_str().is_empty() {
+            &env::current_dir()?
+        } else {
+            parent_path
+        };
+
+        let repo = Self::new(repo_path)?;
+
+        let note_id = title_from_path(path)?.to_owned();
+        let note = repo.note(&note_id)?;
+
+        Ok((repo, Some(note)))
     }
 
     /// Derives the path of a note in this repository from a note ID.
@@ -233,7 +235,8 @@ mod tests {
         create_note(&repo_path, "note.md", "This is the content")?;
 
         let expected_repo = FolderRepository::new(&repo_path)?;
-        let expected_note = expected_repo.note(&String::from("note.md"))?;
+        let expected_note = expected_repo.note("note.md")?;
+        let expected_note_new = expected_repo.note("new note.md")?;
 
         // Path pointing to repo.
         let (repo, note) = FolderRepository::open_path(&repo_path)?;
@@ -247,12 +250,23 @@ mod tests {
         assert_eq!(repo, expected_repo);
         assert_eq!(note, Some(expected_note.clone()));
 
+        // Path pointing to new note in repo.
+        let (repo, note) = FolderRepository::open_path(&repo_path.join("new note.md"))?;
+        assert_eq!(repo, expected_repo);
+        assert_eq!(note, Some(expected_note_new.clone()));
+
         // Path pointing to note in repo, while inside repo.
         set_current_dir(repo_path)?;
         let (repo, note) = FolderRepository::open_path(Path::new("note.md"))?;
 
         assert_eq!(repo, expected_repo);
         assert_eq!(note, Some(expected_note.clone()));
+
+        // Path pointing to new note in repo, while inside repo.
+        let (repo, note) = FolderRepository::open_path(Path::new("new note.md"))?;
+
+        assert_eq!(repo, expected_repo);
+        assert_eq!(note, Some(expected_note_new.clone()));
 
         Ok(())
     }
