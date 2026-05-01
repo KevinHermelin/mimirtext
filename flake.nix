@@ -18,8 +18,14 @@
         pkgs = import nixpkgs { inherit system; };
 
         naersk' = pkgs.callPackage naersk { };
+
+        fontsConf = pkgs.makeFontsConf {
+          fontDirectories = [
+            pkgs.jetbrains-mono
+          ];
+        };
       in
-      {
+      rec {
         packages = {
           default = naersk'.buildPackage {
             src = ./.;
@@ -28,6 +34,30 @@
           test = naersk'.buildPackage {
             src = ./.;
             mode = "test";
+          };
+
+          demo = pkgs.stdenv.mkDerivation {
+            name = "mimir-demo";
+
+            src = ./demo;
+
+            nativeBuildInputs = [
+              packages.default
+              pkgs.vhs
+              pkgs.ncurses
+            ];
+
+            buildPhase = ''
+              # vhs seems to require a home.
+              export HOME="$TMPDIR/home"
+              export FONTCONFIG_FILE="${fontsConf}"
+
+              mkdir -p "$HOME"
+
+              vhs ${./demo/demo.tape}
+              mkdir -p $out
+              cp *.gif $out/
+            '';
           };
         };
 
