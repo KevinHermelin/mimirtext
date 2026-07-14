@@ -11,12 +11,14 @@ use crate::{
         builder::{GraphBuildProgress, create_graph_builder},
     },
     model::{
-        Command, Message, Model, RunningState, Update, note_pane::NotePaneMessage,
+        Command, Message, Model, RunningState, Update,
+        note_pane::NotePaneMessage::{self, GitStatusUpdate},
         search_window::SearchWindowMessage,
     },
     repository::{NoteKey, NoteSnapshot, Repository, folder::FolderRepository, resolve_label},
     text_input::Completion,
     tui::{input::KeyHandler, utils::center},
+    upstream::{Git, GitShell},
 };
 use clap::{Parser, command};
 use color_eyre::Result;
@@ -68,6 +70,7 @@ pub fn main() -> Result<()> {
 pub struct App {
     model: Model,
     repository: Arc<RwLock<dyn Repository + Send + Sync>>,
+    upstream: Box<dyn Git>,
     error_message: Option<String>,
 }
 
@@ -79,6 +82,7 @@ impl App {
     fn new(
         repository: Arc<RwLock<dyn Repository + Send + Sync>>,
         note: Option<NoteSnapshot>,
+        upstream: Box<dyn Git>,
     ) -> Self {
         let mut model = Model::new(repository.read().unwrap().id());
 
@@ -92,13 +96,17 @@ impl App {
         App {
             model,
             repository,
+            upstream,
             error_message: None,
         }
     }
     fn from_path(path: &Path) -> io::Result<Self> {
         let (repo, note) = FolderRepository::open_path(path)?;
+        let repo = Arc::new(RwLock::new(repo));
 
-        Ok(App::new(Arc::new(RwLock::new(repo)), note))
+        let git = GitShell::new(repo.clone());
+
+        Ok(App::new(repo, note, Box::new(git)))
     }
     fn run(&mut self, terminal: &mut Terminal<impl Backend>) -> Result<()> {
         let (graph_progress_tx, graph_progress_rx) = mpsc::channel();
@@ -111,7 +119,8 @@ impl App {
             graph_progress_tx,
         );
 
-        let mut message = Message::None;
+        let mut message = Message::NotePane(GitStatusUpdate(self.upstream.get_status()));
+
         while self.model.running_state != RunningState::Done {
             terminal.draw(|frame| self.draw(frame))?;
 
@@ -289,11 +298,23 @@ mod tests {
     use insta::assert_snapshot;
     use ratatui::{Terminal, backend::TestBackend};
 
+    struct MockUpstream {}
+
+    impl Git for MockUpstream {
+        fn head_name(&self) -> Option<String> {
+            None
+        }
+    }
+
     #[test]
     fn test_render_error() {
         let mut repository = MockRepository::new();
         let note = repository.insert_note("Note name.md", "This is a file.");
-        let mut app = App::new(Arc::new(RwLock::new(repository)), Some(note));
+        let mut app = App::new(
+            Arc::new(RwLock::new(repository)),
+            Some(note),
+            Box::new(MockUpstream {}),
+        );
 
         app.error_message = Some(String::from("This is an error"));
 

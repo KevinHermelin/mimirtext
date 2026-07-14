@@ -13,7 +13,7 @@ pub type Result<T> = super::Result<T>;
 #[derive(Debug, PartialEq)]
 pub struct FolderRepository {
     id: String,
-    root: PathBuf,
+    pub root: PathBuf,
 }
 
 impl FolderRepository {

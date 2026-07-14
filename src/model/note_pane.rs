@@ -4,6 +4,7 @@ use crate::{
     model::{ClampAdd, Command, Update},
     repository::{NoteKey, NoteSnapshot},
     text_input::{Completion, InputOperation, TextInput, TextInputConfig},
+    upstream::GitStatus,
 };
 
 /// A struct representing the state of a note opened for reading and optionally writing.
@@ -72,6 +73,7 @@ pub struct NotePaneModel {
     pub state: NotePaneState,
     pub history: Vec<NoteKey>,
     pub graph_progress: GraphBuildProgress,
+    pub git_status: Option<GitStatus>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -148,6 +150,10 @@ impl Update<NotePaneMessage> for NotePaneModel {
 
         if let NotePaneMessage::GraphUpdate(graph_progress) = &message {
             model.graph_progress = graph_progress.clone();
+        }
+
+        if let NotePaneMessage::GitStatusUpdate(git_status) = &message {
+            model.git_status = git_status.clone();
         }
 
         if let NotePaneState::With(context) = &mut model.state {
@@ -240,6 +246,7 @@ pub enum NotePaneMessage {
     PopNote,
     UpdateNote(NoteSnapshot),
     GraphUpdate(GraphBuildProgress),
+    GitStatusUpdate(Option<GitStatus>),
     ScrollUp,
     ScrollDown,
     NextLink,
@@ -265,7 +272,8 @@ mod tests {
             NotePaneModel {
                 state: NotePaneState::Empty,
                 history: vec![],
-                graph_progress: GraphBuildProgress::Idle
+                graph_progress: GraphBuildProgress::Idle,
+                git_status: None,
             }
         );
     }
@@ -582,5 +590,18 @@ mod tests {
 
         let (model, _) = model.update(NotePaneMessage::GraphUpdate(GraphBuildProgress::Idle));
         assert_eq!(model.graph_progress, GraphBuildProgress::Idle);
+    }
+
+    #[test]
+    fn test_git_status_update() {
+        let model = NotePaneModel::default();
+
+        assert_eq!(model.git_status, None);
+
+        let git_status = GitStatus {
+            head_name: String::from("main"),
+        };
+        let (model, _) = model.update(NotePaneMessage::GitStatusUpdate(Some(git_status.clone())));
+        assert_eq!(model.git_status, Some(git_status));
     }
 }

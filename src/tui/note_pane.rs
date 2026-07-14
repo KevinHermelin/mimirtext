@@ -39,6 +39,11 @@ impl NotePaneModel {
     fn render_block(&self, area: Rect, buf: &mut Buffer) -> Rect {
         let mut block = Block::bordered().border_set(border::THICK);
 
+        if let Some(git_status) = &self.git_status {
+            let git_text = format!(" {} ", git_status.head_name);
+            block = block.title_top(Line::from(git_text).left_aligned());
+        }
+
         if let GraphBuildProgress::InProgress(progress) = self.graph_progress {
             let progress_text = format!(" building graph ({:.0}%) ", progress * 100.0);
             block = block.title_top(Line::from(progress_text).dim().right_aligned());
@@ -187,6 +192,7 @@ mod tests {
         repository::{Repository, mock::MockRepository},
         text_input::{Completion, InputOperation},
         tui::GraphBuildProgress,
+        upstream::GitStatus,
     };
     use insta::assert_snapshot;
     use ratatui::{Terminal, backend::TestBackend};
@@ -237,6 +243,25 @@ mod tests {
 
         let (model, _) = NotePaneModel::default().update(NotePaneMessage::PushNote(note));
         let (model, _) = model.update(NotePaneMessage::ScrollDown);
+
+        let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
+        terminal
+            .draw(|frame| {
+                model.render_with_cursor(frame.area(), frame.buffer_mut());
+            })
+            .unwrap();
+        assert_snapshot!(terminal.backend());
+    }
+
+    #[test]
+    fn test_git_status() {
+        let note =
+            MockRepository::new().insert_note("Note name.md", "This is a note in a Git repo");
+
+        let (model, _) = NotePaneModel::default().update(NotePaneMessage::PushNote(note));
+        let (model, _) = model.update(NotePaneMessage::GitStatusUpdate(Some(GitStatus {
+            head_name: String::from("branch-test"),
+        })));
 
         let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
         terminal
