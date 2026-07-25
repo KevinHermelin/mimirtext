@@ -40,7 +40,7 @@ impl NotePaneModel {
         let mut block = Block::bordered().border_set(border::THICK);
 
         if let Some(git_status) = &self.git_status {
-            let git_text = format!(" {} ", git_status.head_name);
+            let git_text = format!(" {} ", git_status.branch);
             block = block.title_top(Line::from(git_text).left_aligned());
         }
 
@@ -260,7 +260,7 @@ mod tests {
 
         let (model, _) = NotePaneModel::default().update(NotePaneMessage::PushNote(note));
         let (model, _) = model.update(NotePaneMessage::GitStatusUpdate(Some(GitStatus {
-            head_name: String::from("branch-test"),
+            branch: String::from("branch-test"),
         })));
 
         let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();

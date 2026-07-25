@@ -9,15 +9,16 @@ use crate::repository::folder::FolderRepository;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct GitStatus {
-    pub head_name: String,
+    pub branch: String,
 }
 
 pub trait Git {
-    /// Returns the human readable symbolic name of HEAD.
-    fn head_name(&self) -> Option<String>;
+    /// Returns the name of the current branch.
+    fn branch(&self) -> Option<String>;
 
     fn get_status(&self) -> Option<GitStatus> {
-        self.head_name().map(|head_name| GitStatus { head_name })
+        self.branch()
+            .map(|head_name| GitStatus { branch: head_name })
     }
 }
 
@@ -34,13 +35,13 @@ impl GitShell {
 }
 
 impl Git for GitShell {
-    fn head_name(&self) -> Option<String> {
+    fn branch(&self) -> Option<String> {
         let repo = self.repo.read().expect("Should be able to read repo");
 
         let mut command = Command::new("git");
         let output = command
             .current_dir(&repo.root)
-            .args(vec!["name-rev", "--name-only", "HEAD"])
+            .args(vec!["branch", "--short-current"])
             .output();
 
         if let Ok(output) = output {

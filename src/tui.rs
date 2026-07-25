@@ -301,7 +301,7 @@ mod tests {
     struct MockUpstream {}
 
     impl Git for MockUpstream {
-        fn head_name(&self) -> Option<String> {
+        fn branch(&self) -> Option<String> {
             None
         }
     }

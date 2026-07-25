@@ -599,7 +599,7 @@ mod tests {
         assert_eq!(model.git_status, None);
 
         let git_status = GitStatus {
-            head_name: String::from("main"),
+            branch: String::from("main"),
         };
         let (model, _) = model.update(NotePaneMessage::GitStatusUpdate(Some(git_status.clone())));
         assert_eq!(model.git_status, Some(git_status));
