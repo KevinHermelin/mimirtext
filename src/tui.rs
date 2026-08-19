@@ -22,6 +22,7 @@ use clap::{Parser, command};
 use color_eyre::Result;
 use ratatui::{
     Frame, Terminal,
+    backend::CrosstermBackend,
     buffer::Buffer,
     crossterm::{
         ExecutableCommand,
@@ -36,7 +37,7 @@ use ratatui::{
     widgets::{Block, Clear, Paragraph, Widget},
 };
 use std::{
-    io::{self, stdout},
+    io::{self, Stdout, stdout},
     path::{Path, PathBuf},
     sync::{
         Arc, RwLock,
@@ -100,7 +101,7 @@ impl App {
 
         Ok(App::new(Arc::new(RwLock::new(repo)), note))
     }
-    fn run(&mut self, terminal: &mut Terminal<impl Backend>) -> Result<()> {
+    fn run(&mut self, terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
         let (graph_progress_tx, graph_progress_rx) = mpsc::channel();
 
         let graph = Arc::new(RwLock::new(RepositoryGraph::new()));
