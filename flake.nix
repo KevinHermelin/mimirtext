@@ -52,6 +52,9 @@
               export HOME="$TMPDIR/home"
               export FONTCONFIG_FILE="${fontsConf}"
 
+              # VHS fails on Github Actions without this.
+              export VHS_NO_SANDBOX="true"
+
               mkdir -p "$HOME"
 
               vhs ${./demo/demo.tape}
