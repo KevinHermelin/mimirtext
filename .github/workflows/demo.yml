@@ -1,0 +1,24 @@
+name: Demo
+
+on:
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  demo:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install nix
+      uses: cachix/install-nix-action@ab739621df7a23f52766f9ccc97f38da6b7af14f
+    - name: Create demo
+      run: nix build .#demo && cp result/demo.gif demo.gif
+    - name: Commit demo
+      uses: stefanzweifel/git-auto-commit-action@v7
+      with:
+        commit_message: "chore: update demo [skip ci]"
+        file_pattern: "demo.gif"
