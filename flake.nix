@@ -57,7 +57,9 @@
 
               mkdir -p "$HOME"
 
-              vhs ${./demo/demo.tape}
+              for i in *.tape; do
+                vhs $i
+              done
               mkdir -p $out
               cp *.gif $out/
             '';
