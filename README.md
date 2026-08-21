@@ -1,5 +1,7 @@
 # Mimir
 
+![](docs/demo.gif)
+
 Mimir is a lightweight tool to view and edit your Markdown wiki directly from the terminal.
 
 ## Features
