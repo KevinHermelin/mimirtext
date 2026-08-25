@@ -16,7 +16,7 @@ Mimir is a lightweight tool to view and edit your Markdown wiki directly from th
 Currently, the only way to run Mimir is by building it locally. With Nix installed, this is easily done through:
 
 ```sh
-nix run github:KevinHermelin/mimirnotes
+nix run github:KevinHermelin/mimirtext
 ```
 
 Alternatively, you may build it directly using `cargo run` or `cargo build`. You will need the [Rust toolchain](https://rust-lang.org/) installed.
