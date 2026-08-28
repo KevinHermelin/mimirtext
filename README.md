@@ -4,6 +4,10 @@
 
 Mimir is a lightweight tool to view and edit your Markdown wiki directly from the terminal.
 
+A Markdown wiki is a collection of Markdown notes connected to each other through wikilinks. This creates a web of notes ordered more organically compared to traditional linear systems. This can be used to create documentation, a personal encyclopedia, or for a digital [Zettelkasten](https://en.wikipedia.org/wiki/Zettelkasten).
+
+A wide variety of software exists for this purpose. Mimir is a lighter alternative that can be run directly in the terminal. Written in Rust, it is fast and has a tiny memory footprint.
+
 ## Features
 
 - Browse your Markdown notes in the terminal
