@@ -1,12 +1,12 @@
-# Mimir
+# Mimir Text
 
 ![](docs/demo.gif)
 
-Mimir is a lightweight tool to view and edit your Markdown wiki directly from the terminal.
+Mimir Text is a lightweight tool to view and edit your Markdown wiki directly from the terminal.
 
 A Markdown wiki is a collection of Markdown notes connected to each other through wikilinks. This creates a web of notes ordered more organically compared to traditional linear systems. This can be used to create documentation, a personal encyclopedia, or for a digital [Zettelkasten](https://en.wikipedia.org/wiki/Zettelkasten).
 
-A wide variety of software exists for this purpose. Mimir is a lighter alternative that can be run directly in the terminal. Written in Rust, it is fast and has a tiny memory footprint.
+A wide variety of software exists for this purpose. Mimir Text is a lighter alternative that can be run directly in the terminal. Written in Rust, it is fast and has a tiny memory footprint.
 
 ## Features
 
@@ -17,7 +17,7 @@ A wide variety of software exists for this purpose. Mimir is a lighter alternati
 
 ## Building
 
-Currently, the only way to run Mimir is by building it locally. With Nix installed, this is easily done through:
+Currently, the only way to run Mimir Text is by building it locally. With Nix installed, this is easily done through:
 
 ```sh
 nix run github:KevinHermelin/mimirtext
@@ -28,7 +28,7 @@ Alternatively, you may build it directly using `cargo run` or `cargo build`. You
 
 ## Usage
 
-Notes are stored as normal `.md` files in a directory, referred to as a repository. Any directory can be used as a repository. To create a directory "Notes" and open it as a repository in Mimir:
+Notes are stored as normal `.md` files in a directory, referred to as a repository. Any directory can be used as a repository. To create a directory "Notes" and open it as a repository in Mimir Text:
 
 ```sh
 mkdir Notes
@@ -37,7 +37,7 @@ mimir Notes/Index.md
 
 This will open an empty index note in a newly created directory "Notes".
 
-**Please note that Mimir will auto-save any changes made in the app directly to the files in the directory. This means that running Mimir inside a non-empty directory could potentially lead to unintended changes made to files in the directory. Back up your data and always run Mimir in a separate directory.**
+**Please note that Mimir Text will auto-save any changes made in the app directly to the files in the directory. This means that running the app inside a non-empty directory could potentially lead to unintended changes made to files in the directory. Back up your data and always run Mimir Text in a separate directory.**
 
 ### Browse mode
 
