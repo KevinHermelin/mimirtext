@@ -35,17 +35,20 @@ mkdir Notes
 mimir Notes/Index.md
 ```
 
-This will open an empty index note in a newly created directory "Notes".
+This will open an empty note `Index.md` in a newly created directory `Notes`. 
 
 **Please note that Mimir Text will auto-save any changes made in the app directly to the files in the directory. This means that running the app inside a non-empty directory could potentially lead to unintended changes made to files in the directory. Back up your data and always run Mimir Text in a separate directory.**
 
+There are two modes in Mimir Text. The mode is indicated by the mode display in the bottom-right corner.
+
+Markdown notes (empty or not) are always opened in **browse mode**. From here, you can enter **edit mode** by pressing `C` to add content to your notes. Pressing `ESCAPE` writes any changes to file and changes the mode back to **browse mode**.
+
 ### Browse mode
 
-Markdown notes (empty or not) are always opened in "Browse" mode. This is indicated by "BROWSE" by the mode display in the bottom-right corner.
+In this mode, Markdown is rendered using styled text and you can navigate to other notes by following wikilinks. 
 
-*If the mode display shows "SOURCE", you have opened a file that is not a `.md` note.*
+*If the mode display shows "SOURCE", you have opened a file that is not a Markdown (`.md`) note. Source mode works exactly as browse mode except that all styling and link selection are disabled.*
 
-In this mode, Markdown is rendered and you can navigate using wikilinks. 
 - Scroll using `UP` and `DOWN` arrow keys.
 - Select a link using the `LEFT` and `RIGHT` arrow keys and follow it by pressing `ENTER`. 
     - Press `BACKSPACE` to navigate backwards. 
@@ -59,6 +62,10 @@ In this mode, Markdown is rendered and you can navigate using wikilinks.
 ### Edit mode
 
 In edit mode, the raw Markdown is opened for editing. Press `ESCAPE` to save your changes and exit edit mode. 
+
+Notes ending in `.md` can be formatted using [Markdown](https://www.markdownguide.org). However, not all Markdown syntax is currently supported. 
+
+Mimir Text also supports wikilinks. A wikilink is a shorter syntax for creating links to other notes in the same repository. As an example, `[[Note]]` creates a link with text `Note` pointing to a note with filename `Note.md`. The link text can be changed by adding an alias. `[[Note|Another name]]` creates a link to the same note but displays `Another name` instead. Links can be added both to existing and yet-to-be-created notes. The easiest way to create new notes is by adding links to them in pre-existing notes.
 
 ## License
 
